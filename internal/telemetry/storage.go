@@ -397,6 +397,232 @@ func (s *InstrumentedStorage) RunInTransaction(ctx context.Context, commitMsg st
 	return err
 }
 
+// ── Entity operations (v8) ──────────────────────────────────────────────────
+
+func (s *InstrumentedStorage) CreateEntity(ctx context.Context, entity *types.Entity) error {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.entity.id", entity.ID),
+		attribute.String("bd.entity.type", entity.EntityType),
+	}
+	ctx, span, t := s.op(ctx, "CreateEntity", attrs...)
+	err := s.inner.CreateEntity(ctx, entity)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) GetEntity(ctx context.Context, id string) (*types.Entity, error) {
+	attrs := []attribute.KeyValue{attribute.String("bd.entity.id", id)}
+	ctx, span, t := s.op(ctx, "GetEntity", attrs...)
+	v, err := s.inner.GetEntity(ctx, id)
+	s.done(ctx, span, t, err, attrs...)
+	return v, err
+}
+
+func (s *InstrumentedStorage) UpdateEntity(ctx context.Context, entity *types.Entity) error {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.entity.id", entity.ID),
+		attribute.String("bd.entity.type", entity.EntityType),
+	}
+	ctx, span, t := s.op(ctx, "UpdateEntity", attrs...)
+	err := s.inner.UpdateEntity(ctx, entity)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) DeleteEntity(ctx context.Context, id string) error {
+	attrs := []attribute.KeyValue{attribute.String("bd.entity.id", id)}
+	ctx, span, t := s.op(ctx, "DeleteEntity", attrs...)
+	err := s.inner.DeleteEntity(ctx, id)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) SearchEntities(ctx context.Context, filters storage.EntityFilters) ([]*types.Entity, error) {
+	attrs := []attribute.KeyValue{attribute.String("bd.entity.type", filters.EntityType)}
+	ctx, span, t := s.op(ctx, "SearchEntities", attrs...)
+	entities, err := s.inner.SearchEntities(ctx, filters)
+	if err == nil {
+		span.SetAttributes(attribute.Int("bd.result.count", len(entities)))
+	}
+	s.done(ctx, span, t, err, attrs...)
+	return entities, err
+}
+
+// ── Relationship operations (v8) ────────────────────────────────────────────
+
+func (s *InstrumentedStorage) CreateRelationship(ctx context.Context, rel *types.Relationship) error {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.rel.id", rel.ID),
+		attribute.String("bd.rel.type", rel.RelationshipType),
+		attribute.String("bd.rel.from", rel.SourceEntityID),
+		attribute.String("bd.rel.to", rel.TargetEntityID),
+	}
+	ctx, span, t := s.op(ctx, "CreateRelationship", attrs...)
+	err := s.inner.CreateRelationship(ctx, rel)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) GetRelationship(ctx context.Context, id string) (*types.Relationship, error) {
+	attrs := []attribute.KeyValue{attribute.String("bd.rel.id", id)}
+	ctx, span, t := s.op(ctx, "GetRelationship", attrs...)
+	v, err := s.inner.GetRelationship(ctx, id)
+	s.done(ctx, span, t, err, attrs...)
+	return v, err
+}
+
+func (s *InstrumentedStorage) UpdateRelationship(ctx context.Context, rel *types.Relationship) error {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.rel.id", rel.ID),
+		attribute.String("bd.rel.type", rel.RelationshipType),
+	}
+	ctx, span, t := s.op(ctx, "UpdateRelationship", attrs...)
+	err := s.inner.UpdateRelationship(ctx, rel)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) DeleteRelationship(ctx context.Context, id string) error {
+	attrs := []attribute.KeyValue{attribute.String("bd.rel.id", id)}
+	ctx, span, t := s.op(ctx, "DeleteRelationship", attrs...)
+	err := s.inner.DeleteRelationship(ctx, id)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) SearchRelationships(ctx context.Context, filters storage.RelationshipFilters) ([]*types.Relationship, error) {
+	attrs := []attribute.KeyValue{attribute.String("bd.rel.type", filters.RelationshipType)}
+	ctx, span, t := s.op(ctx, "SearchRelationships", attrs...)
+	relationships, err := s.inner.SearchRelationships(ctx, filters)
+	if err == nil {
+		span.SetAttributes(attribute.Int("bd.result.count", len(relationships)))
+	}
+	s.done(ctx, span, t, err, attrs...)
+	return relationships, err
+}
+
+func (s *InstrumentedStorage) GetRelationshipsWithTemporalFilter(ctx context.Context, entityID string, validAt time.Time, direction storage.RelationshipDirection) ([]*types.Relationship, error) {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.entity.id", entityID),
+		attribute.String("bd.valid_at", validAt.Format(time.RFC3339)),
+	}
+	ctx, span, t := s.op(ctx, "GetRelationshipsWithTemporalFilter", attrs...)
+	relationships, err := s.inner.GetRelationshipsWithTemporalFilter(ctx, entityID, validAt, direction)
+	if err == nil {
+		span.SetAttributes(attribute.Int("bd.result.count", len(relationships)))
+	}
+	s.done(ctx, span, t, err, attrs...)
+	return relationships, err
+}
+
+// ── Episode operations (v8) ─────────────────────────────────────────────────
+
+func (s *InstrumentedStorage) CreateEpisode(ctx context.Context, episode *types.Episode) error {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.episode.id", episode.ID),
+		attribute.String("bd.episode.source", episode.Source),
+	}
+	ctx, span, t := s.op(ctx, "CreateEpisode", attrs...)
+	err := s.inner.CreateEpisode(ctx, episode)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) GetEpisode(ctx context.Context, id string) (*types.Episode, error) {
+	attrs := []attribute.KeyValue{attribute.String("bd.episode.id", id)}
+	ctx, span, t := s.op(ctx, "GetEpisode", attrs...)
+	v, err := s.inner.GetEpisode(ctx, id)
+	s.done(ctx, span, t, err, attrs...)
+	return v, err
+}
+
+func (s *InstrumentedStorage) SearchEpisodes(ctx context.Context, filters storage.EpisodeFilters) ([]*types.Episode, error) {
+	attrs := []attribute.KeyValue{attribute.String("bd.episode.source", filters.Source)}
+	ctx, span, t := s.op(ctx, "SearchEpisodes", attrs...)
+	episodes, err := s.inner.SearchEpisodes(ctx, filters)
+	if err == nil {
+		span.SetAttributes(attribute.Int("bd.result.count", len(episodes)))
+	}
+	s.done(ctx, span, t, err, attrs...)
+	return episodes, err
+}
+
+// ── Ontology operations (v8) ────────────────────────────────────────────────
+
+func (s *InstrumentedStorage) RegisterEntityType(ctx context.Context, schema *types.EntityTypeSchema) error {
+	attrs := []attribute.KeyValue{attribute.String("bd.entity_type.name", schema.TypeName)}
+	ctx, span, t := s.op(ctx, "RegisterEntityType", attrs...)
+	err := s.inner.RegisterEntityType(ctx, schema)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) RegisterRelationshipType(ctx context.Context, schema *types.RelationshipTypeSchema) error {
+	attrs := []attribute.KeyValue{attribute.String("bd.rel_type.name", schema.TypeName)}
+	ctx, span, t := s.op(ctx, "RegisterRelationshipType", attrs...)
+	err := s.inner.RegisterRelationshipType(ctx, schema)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) GetEntityTypes(ctx context.Context) ([]*types.EntityTypeSchema, error) {
+	ctx, span, t := s.op(ctx, "GetEntityTypes")
+	v, err := s.inner.GetEntityTypes(ctx)
+	if err == nil {
+		span.SetAttributes(attribute.Int("bd.result.count", len(v)))
+	}
+	s.done(ctx, span, t, err)
+	return v, err
+}
+
+func (s *InstrumentedStorage) GetRelationshipTypes(ctx context.Context) ([]*types.RelationshipTypeSchema, error) {
+	ctx, span, t := s.op(ctx, "GetRelationshipTypes")
+	v, err := s.inner.GetRelationshipTypes(ctx)
+	if err == nil {
+		span.SetAttributes(attribute.Int("bd.result.count", len(v)))
+	}
+	s.done(ctx, span, t, err)
+	return v, err
+}
+
+func (s *InstrumentedStorage) GetEntityTypeSchema(ctx context.Context, typeName string) (*types.EntityTypeSchema, error) {
+	attrs := []attribute.KeyValue{attribute.String("bd.entity_type.name", typeName)}
+	ctx, span, t := s.op(ctx, "GetEntityTypeSchema", attrs...)
+	v, err := s.inner.GetEntityTypeSchema(ctx, typeName)
+	s.done(ctx, span, t, err, attrs...)
+	return v, err
+}
+
+func (s *InstrumentedStorage) GetRelationshipTypeSchema(ctx context.Context, typeName string) (*types.RelationshipTypeSchema, error) {
+	attrs := []attribute.KeyValue{attribute.String("bd.rel_type.name", typeName)}
+	ctx, span, t := s.op(ctx, "GetRelationshipTypeSchema", attrs...)
+	v, err := s.inner.GetRelationshipTypeSchema(ctx, typeName)
+	s.done(ctx, span, t, err, attrs...)
+	return v, err
+}
+
+func (s *InstrumentedStorage) ValidateEntityAgainstType(ctx context.Context, entity *types.Entity, typeName string) error {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.entity.id", entity.ID),
+		attribute.String("bd.entity_type.name", typeName),
+	}
+	ctx, span, t := s.op(ctx, "ValidateEntityAgainstType", attrs...)
+	err := s.inner.ValidateEntityAgainstType(ctx, entity, typeName)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) ValidateRelationshipAgainstType(ctx context.Context, rel *types.Relationship, typeName string) error {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.rel.id", rel.ID),
+		attribute.String("bd.rel_type.name", typeName),
+	}
+	ctx, span, t := s.op(ctx, "ValidateRelationshipAgainstType", attrs...)
+	err := s.inner.ValidateRelationshipAgainstType(ctx, rel, typeName)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
 func (s *InstrumentedStorage) Close() error {

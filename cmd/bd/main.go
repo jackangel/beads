@@ -193,9 +193,11 @@ func init() {
 	rootCmd.Flags().BoolP("version", "V", false, "Print version information")
 
 	// Command groups for organized help output (Tufte-inspired)
+	rootCmd.AddGroup(&cobra.Group{ID: "core", Title: "Core Commands:"})
 	rootCmd.AddGroup(&cobra.Group{ID: "issues", Title: "Working With Issues:"})
 	rootCmd.AddGroup(&cobra.Group{ID: "views", Title: "Views & Reports:"})
 	rootCmd.AddGroup(&cobra.Group{ID: "deps", Title: "Dependencies & Structure:"})
+	rootCmd.AddGroup(&cobra.Group{ID: "knowledge", Title: "Knowledge Graph:"})
 	rootCmd.AddGroup(&cobra.Group{ID: "sync", Title: "Sync & Data:"})
 	rootCmd.AddGroup(&cobra.Group{ID: "setup", Title: "Setup & Configuration:"})
 	// NOTE: Many maintenance commands (clean, cleanup, compact, validate, repair-deps)

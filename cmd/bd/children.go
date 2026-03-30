@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +26,14 @@ Examples:
   bd children hq-abc123 --pretty # Show children in tree format`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		// Deprecation warning (only in human-readable mode)
+		jsonOutput, _ := cmd.Flags().GetBool("json")
+		if !jsonOutput {
+			fmt.Fprintln(os.Stderr, "⚠️  Warning: 'bd children' is deprecated. Use 'bd relationship list' instead.")
+			fmt.Fprintln(os.Stderr, "   See 'bd relationship list --help' for details.")
+			fmt.Fprintln(os.Stderr, "")
+		}
+
 		parentID := args[0]
 
 		// Set the parent flag on listCmd, run it, then reset

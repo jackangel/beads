@@ -33,12 +33,15 @@ beads/
 **For manual testing**, use the `BEADS_DB` environment variable to point to a temporary database:
 
 ```bash
-# Create test issues in isolated database
+# Create test entities in isolated database (v8)
 BEADS_DB=/tmp/test.db bd init --quiet --prefix test
-BEADS_DB=/tmp/test.db bd create "Test issue" -p 1
+BEADS_DB=/tmp/test.db bd entity create --entity-type task --name "Test entity" --description="Test" --json
 
-# Or for quick testing
-BEADS_DB=/tmp/test.db bd create "Test feature" -p 1
+# Or use legacy commands (v7, deprecated):
+# BEADS_DB=/tmp/test.db bd create "Test issue" -p 1
+
+# For quick testing
+BEADS_DB=/tmp/test.db bd entity create --entity-type feature --name "Test feature" --description="Test" --json
 ```
 
 **For automated tests**, use `t.TempDir()` in Go tests:
@@ -148,15 +151,17 @@ bd hooks install
 **Example "land the plane" session:**
 
 ```bash
-# 1. File remaining work
-bd create "Add integration tests for sync" -t task -p 2 --json
+# 1. File remaining work (v8 recommended, v7 still works)
+bd entity create --entity-type task --name "Add integration tests for sync" --description="Details" --json
+# Or (v7, deprecated): bd create "Add integration tests for sync" -t task -p 2 --json
 
 # 2. Run quality gates (only if code changes were made)
 go test -short ./...
 golangci-lint run ./...
 
-# 3. Close finished issues
-bd close bd-42 bd-43 --reason "Completed" --json
+# 3. Close finished issues (v8 recommended, v7 still works)
+bd entity close task-abc task-def --reason "Completed" --json
+# Or (v7, deprecated): bd close bd-42 bd-43 --reason "Completed" --json
 
 # 4. PUSH TO REMOTE - MANDATORY, NO STOPPING BEFORE THIS IS DONE
 git pull --rebase
@@ -172,7 +177,8 @@ git status
 
 # 7. Choose next work
 bd ready --json
-bd show bd-44 --json
+bd entity show task-xyz --json
+# Or (v7, deprecated): bd show bd-44 --json
 ```
 
 **Then provide the user with:**
@@ -187,8 +193,15 @@ bd show bd-44 --json
 
 ## Agent Session Workflow
 
-**WARNING: DO NOT use `bd edit`** - it opens an interactive editor ($EDITOR) which AI agents cannot use. Use `bd update` with flags instead:
+**WARNING: DO NOT use `bd edit`** - it opens an interactive editor ($EDITOR) which AI agents cannot use. Use `bd update` or `bd entity update` with flags instead:
+
 ```bash
+# v8 (Recommended):
+bd entity update <id> --description "new description"
+bd entity update <id> --name "new title"
+bd entity update <id> --properties '{"design": "design notes"}'
+
+# v7 (Deprecated, but still works):
 bd update <id> --description "new description"
 bd update <id> --title "new title"
 bd update <id> --design "design notes"
@@ -197,8 +210,15 @@ bd update <id> --acceptance "acceptance criteria"
 ```
 
 **Use stdin for descriptions with special characters** (backticks, `!`, nested quotes):
+
 ```bash
 # Pipe via stdin to avoid shell escaping issues
+
+# v8 (Recommended):
+echo 'Description with `backticks` and "quotes"' | bd entity create --entity-type task --name "Title" --description=-
+echo 'Updated description with $variables' | bd entity update <id> --description=-
+
+# v7 (Deprecated, but still works):
 echo 'Description with `backticks` and "quotes"' | bd create "Title" --stdin
 echo 'Updated description with $variables' | bd update <id> --description=-
 
@@ -210,6 +230,14 @@ bd create "Title" --body-file=description.md
 
 ```bash
 # Make changes (each write auto-commits to Dolt)
+
+# v8 (Recommended):
+bd entity create --entity-type task --name "Fix bug" --description="Details" --json
+bd entity create --entity-type task --name "Add tests" --description="Details" --json
+bd entity update task-abc --claim --json
+bd entity close task-def --reason "Completed" --json
+
+# v7 (Deprecated, but still works with warnings):
 bd create "Fix bug" -p 1
 bd create "Add tests" -p 1
 bd update bd-42 --claim
@@ -227,6 +255,308 @@ This installs:
 - **post-merge** — Pulls remote Dolt changes after git merge
 
 **Note:** Hooks are embedded in the bd binary and work for all bd users (not just source repo users).
+
+## Knowledge Graph Workflow (v8)
+
+**IMPORTANT**: As of v8, beads has evolved from a hierarchical issue tracker (Epic → Task → Sub-task) to a flexible **Knowledge Graph** based on entities and relationships. This enables modeling of complex relationships beyond parent-child hierarchies.
+
+### Understanding the Knowledge Graph Model
+
+**v7 (Old Model - Deprecated):**
+- Fixed 3-level hierarchy: Epic → Task → Sub-task
+- Parent-child relationships only
+- Limited to "issue" entities
+
+**v8 (Current Model):**
+- Flexible entity types: task, feature, bug, document, test, person, product, concept, etc.
+- Rich relationship types: blocks, implements, tests, documents, uses, replaces, etc.
+- Multi-dimensional graph: One entity can have multiple relationship types
+- Temporal relationships: Track when relationships were valid (valid_from, valid_until)
+
+### Entity and Relationship Commands
+
+**Create entities:**
+
+```bash
+# Create a task entity
+bd entity create --entity-type task --name "Fix authentication bug" --description "Details..." --json
+
+# Create a feature entity
+bd entity create --entity-type feature --name "Add SSO support" --description "Details..." --json
+
+# Create a document entity
+bd entity create --entity-type document --name "API Design Doc" --description "Details..." --json
+
+# Create a test entity
+bd entity create --entity-type test --name "Integration test suite" --description "Details..." --json
+
+# Use stdin for descriptions with special characters
+echo 'Description with `backticks` and "quotes"' | bd entity create --entity-type task --name "Title" --description=-
+```
+
+**Create relationships:**
+
+```bash
+# Create a "blocks" relationship
+bd relationship create --from task-abc --type blocks --to task-def --json
+
+# Create an "implements" relationship
+bd relationship create --from task-abc --type implements --to feature-xyz --json
+
+# Create a "tests" relationship
+bd relationship create --from test-abc --type tests --to task-def --json
+
+# Create a "contains" relationship (for hierarchies)
+bd relationship create --from feature-abc --type contains --to task-def --json
+
+# Create temporal relationship (valid for specific time range)
+bd relationship create --from task-abc --type uses --to product-xyz --valid-from "2026-01-01" --valid-until "2026-12-31" --json
+```
+
+**Explore the graph:**
+
+```bash
+# Explore entity's relationships (BFS, depth 2)
+bd graph explore task-abc --depth 2 --json
+
+# Traverse graph with specific relationship types
+bd graph traverse task-abc --types blocks,implements --direction outbound --json
+
+# List all relationships from an entity
+bd relationship list --source task-abc --json
+
+# List specific relationship type
+bd relationship list --source task-abc --type blocks --json
+```
+
+### Custom Ontology (Entity and Relationship Types)
+
+v8 allows you to register custom entity and relationship types for domain-specific modeling:
+
+**Register custom entity type:**
+
+```bash
+# Register a "component" entity type
+bd ontology register-entity-type --name component --schema schema.json --json
+
+# Example schema.json:
+# {
+#   "name": "component",
+#   "description": "A software component",
+#   "fields": {
+#     "language": {"type": "string", "required": true},
+#     "repository": {"type": "string"}
+#   }
+# }
+```
+
+**Register custom relationship type:**
+
+```bash
+# Register a "depends-on" relationship type
+bd ontology register-relationship-type --name depends-on --schema schema.json --json
+
+# Example schema.json:
+# {
+#   "name": "depends-on",
+#   "description": "Component dependency",
+#   "cardinality": "many-to-many",
+#   "temporal": true
+# }
+```
+
+**List registered types:**
+
+```bash
+# List all entity and relationship types
+bd ontology list --json
+
+# Output shows built-in + custom types:
+# Entity types: task, feature, bug, document, test, component
+# Relationship types: blocks, implements, tests, documents, uses, depends-on
+```
+
+### Episodes (Provenance Logging)
+
+Episodes track WHO did WHAT, WHEN, and WHY for audit trails:
+
+```bash
+# Create episode for a work session
+bd episode create --name "Authentication refactor" --description "Refactored auth module" --json
+
+# Add entities to episode
+bd episode add-entity episode-abc task-def --json
+
+# List episodes
+bd episode list --json
+
+# Show episode details
+bd episode show episode-abc --json
+```
+
+### Migration from v7 to v8
+
+If you're working with a database that hasn't migrated to v8 yet:
+
+**Check migration status:**
+
+```bash
+bd migrate status
+# Output: Current schema version: 7 or 8
+```
+
+**Using compatibility mode:**
+
+```bash
+# Check current compat mode
+bd compat status
+
+# Set to v8 mode (enables entity/relationship commands)
+bd compat set v8
+
+# Set to v7 mode (legacy commands only)
+bd compat set v7
+```
+
+**Handling deprecated commands:**
+
+```bash
+# Old command (v7 - deprecated, but still works)
+bd create "Task" --description="Details" -p 1 --json
+# Warning: 'bd create' is deprecated. Use 'bd entity create' instead.
+
+# New command (v8 - recommended)
+bd entity create --entity-type task --name "Task" --description="Details" --json
+
+# Old children command (v7 - deprecated)
+bd children bd-1
+# Warning: 'bd children' is deprecated. Use 'bd relationship list --source <id> --type contains' instead.
+
+# New command (v8 - recommended)
+bd relationship list --source bd-1 --type contains --json
+```
+
+### Agent Workflow with Knowledge Graph
+
+**1. Check ready work:**
+
+```bash
+bd ready --json
+# Shows entities that are unblocked (no blocking relationships)
+```
+
+**2. Claim entity:**
+
+```bash
+bd entity update <id> --claim --json
+# Or use legacy command (with deprecation warning)
+bd update <id> --claim --json
+```
+
+**3. Work on entity:**
+
+Implement, test, document as usual.
+
+**4. Discover new relationships:**
+
+```bash
+# Found that task-abc blocks task-def
+bd relationship create --from task-abc --type blocks --to task-def --json
+
+# Found that task-abc implements feature-xyz
+bd relationship create --from task-abc --type implements --to feature-xyz --json
+
+# Found new entity discovered during work
+bd entity create --entity-type document --name "Design doc" --description="Found while researching" --json
+bd relationship create --from task-abc --type documents --to document-new --json
+```
+
+**5. Complete work:**
+
+```bash
+bd entity close <id> --reason "Completed" --json
+# Or use legacy command
+bd close <id> --reason "Completed" --json
+```
+
+### Common Graph Patterns
+
+**Feature with tasks and tests:**
+
+```bash
+# Create feature
+bd entity create --entity-type feature --name "SSO Integration" --description="Add SSO" --json
+# Output: feature-abc
+
+# Create tasks
+bd entity create --entity-type task --name "Implement OAuth" --description="Details" --json
+# Output: task-def
+bd entity create --entity-type task --name "Update UI" --description="Details" --json
+# Output: task-ghi
+
+# Create test
+bd entity create --entity-type test --name "SSO Integration Tests" --description="Details" --json
+# Output: test-xyz
+
+# Create relationships
+bd relationship create --from task-def --type implements --to feature-abc --json
+bd relationship create --from task-ghi --type implements --to feature-abc --json
+bd relationship create --from test-xyz --type tests --to feature-abc --json
+```
+
+**Bug with blocking relationships:**
+
+```bash
+# Create bug
+bd entity create --entity-type bug --name "Auth crash on logout" --description="Details" --json
+# Output: bug-abc
+
+# Bug blocks feature work
+bd relationship create --from bug-abc --type blocks --to feature-def --json
+
+# Check what's blocked by this bug
+bd relationship list --source bug-abc --type blocks --json
+```
+
+**Documentation and implementation links:**
+
+```bash
+# Create doc and implementation
+bd entity create --entity-type document --name "API Spec" --description="Details" --json
+# Output: doc-abc
+bd entity create --entity-type task --name "Implement API" --description="Details" --json
+# Output: task-def
+
+# Link them
+bd relationship create --from task-def --type implements --to doc-abc --json
+bd relationship create --from doc-abc --type documents --to task-def --json
+
+# Find all tasks implementing this doc
+bd relationship list --target doc-abc --type implements --json
+```
+
+### Backward Compatibility Notes
+
+- **Legacy commands still work**: `bd create`, `bd list`, `bd show`, `bd children` work in v8 mode but show deprecation warnings
+- **Old issue types preserved**: Epic, Task, Sub-task are now entity types
+- **Parent-child becomes contains**: Old parent-child dependencies are migrated to "contains" relationships
+- **Gradual migration**: You can use both old and new commands during transition
+
+### Important Rules for Knowledge Graph
+
+- ✅ Use `bd entity create` for new entities (not `bd create`)
+- ✅ Use `bd relationship create` to link entities (not `--parent` flag)
+- ✅ Use `bd relationship list` to explore graph (not `bd children`)
+- ✅ Use `bd graph explore` for multi-hop graph traversal
+- ✅ Register custom entity/relationship types for domain-specific modeling
+- ✅ Always use `--json` flag for programmatic use
+- ❌ Do NOT use deprecated `bd create --parent` syntax
+- ❌ Do NOT assume hierarchical parent-child only
+- ❌ Do NOT forget to check migration status (`bd migrate status`)
+
+For complete v8 documentation, see:
+- [docs/MIGRATION_V8.md](docs/MIGRATION_V8.md) - Migration guide
+- [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) - Complete command reference
 
 ## Common Development Tasks
 
@@ -287,10 +617,14 @@ make test-full-cgo
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 
-# Verify installed binary
+# Verify installed binary (v8 commands)
 bd init --prefix test
-bd create "Test issue" -p 1
+bd entity create --entity-type task --name "Test issue" --description="Test" --json
 bd ready
+
+# Or use legacy commands (v7, deprecated):
+# bd create "Test issue" -p 1
+# bd ready
 ```
 
 > **WARNING**: Do NOT use `go build -o bd ./cmd/bd` or `go install ./cmd/bd`.
@@ -402,10 +736,12 @@ gh issue view 201
 
 ## Questions?
 
-- Check existing issues: `bd list`
+- Check existing issues: `bd list` or `bd entity list` (v8)
 - Look at recent commits: `git log --oneline -20`
 - Read the docs: README.md, ADVANCED.md, EXTENDING.md
-- Create an issue if unsure: `bd create "Question: ..." -t task -p 2`
+- Create an issue if unsure: 
+  - v8: `bd entity create --entity-type task --name "Question: ..." --description="Details" --json`
+  - v7: `bd create "Question: ..." -t task -p 2` (deprecated)
 
 ## Important Files
 
@@ -414,3 +750,5 @@ gh issue view 201
 - **ADVANCED.md** - Advanced features (rename, merge, compaction)
 - **CONTRIBUTING.md** - Contribution guidelines
 - **SECURITY.md** - Security policy
+- **docs/MIGRATION_V8.md** - Knowledge graph migration guide (v7 → v8)
+- **docs/CLI_REFERENCE.md** - Complete command reference (includes v8 commands)

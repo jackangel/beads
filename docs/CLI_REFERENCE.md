@@ -7,6 +7,12 @@
 
 - [Basic Operations](#basic-operations)
 - [Issue Management](#issue-management)
+- [Memory System (v8)](#memory-system-v8)
+  - [Entity Management](#entity-management)
+  - [Relationship Management](#relationship-management)
+  - [Episode Management](#episode-management)
+  - [Ontology Management](#ontology-management)
+  - [Graph Operations](#graph-operations)
 - [Dependencies & Labels](#dependencies--labels)
 - [Filtering & Search](#filtering--search)
 - [Advanced Operations](#advanced-operations)
@@ -48,6 +54,8 @@ bd stale --limit 20 --json                   # Limit results
 ## Issue Management
 
 ### Create Issues
+
+> **Deprecation Notice (v8.0+)**: `bd create` is deprecated in favor of `bd entity create` for the new memory system. See [Memory System (v8)](#memory-system-v8) for details. In v7 compatibility mode, `bd create` continues to work.
 
 ```bash
 # Basic creation
@@ -144,11 +152,248 @@ bd show <id> [<id>...] --json
 bd show --current
 ```
 
+## Memory System (v8)
+
+The v8 memory system replaces the rigid issue hierarchy with a flexible entity-relationship graph. This enables modeling arbitrary concepts, temporal relationships, and provenance tracking.
+
+**Key Benefits:**
+- Define custom entity types beyond bugs/features/tasks
+- Model relationships with temporal validity
+- Track knowledge provenance with episodes
+- Graph traversal and exploration
+- Full backward compatibility with v7 via compatibility mode
+
+### Entity Management
+
+Entities are the core building blocks of the v8 memory system.
+
+```bash
+# Create an entity
+bd entity create --entity-type <type> --name <name> --description <desc> --json
+
+# Examples:
+bd entity create --entity-type person --name "Alice" --description "Senior engineer" --json
+bd entity create --entity-type component --name "auth-service" --description "Authentication microservice" --json
+bd entity create --entity-type concept --name "zero-trust" --description "Security architecture principle" --json
+
+# List entities by type
+bd entity list --entity-type person --json
+bd entity list --entity-type component --json
+bd entity list --json  # All entities
+
+# Show entity details
+bd entity show <id> --json
+bd entity show bd-ent-a3f8e9 --json
+
+# Update entity
+bd entity update <id> --name <name> --summary <summary> --json
+bd entity update bd-ent-a3f8e9 --name "Alice Smith" --json
+bd entity update bd-ent-a3f8e9 --summary "Updated expertise areas" --json
+
+# Delete entity
+bd entity delete <id> --json
+bd entity delete bd-ent-a3f8e9 --json
+```
+
+**Entity Types:**
+- Defined via ontology registration (see [Ontology Management](#ontology-management))
+- Can represent any domain concept: people, components, decisions, patterns, etc.
+- Backward compatible: `issue`, `bug`, `feature`, `task` are built-in entity types in v8
+
+### Relationship Management
+
+Relationships connect entities with optional temporal validity and metadata.
+
+```bash
+# Create a relationship
+bd relationship create --from <id> --type <type> --to <id> --json
+
+# Examples:
+bd relationship create --from bd-ent-alice --type authored --to bd-ent-design-doc --json
+bd relationship create --from bd-ent-auth --type depends-on --to bd-ent-db --json
+bd relationship create --from bd-ent-api --type implements --to bd-ent-spec-42 --json
+
+# Create with temporal validity
+bd relationship create --from <id> --type <type> --to <id> --valid-until "2026-12-31" --json
+bd relationship create --from bd-ent-alice --type assigned-to --to bd-ent-proj-x --valid-until "2026-06-30" --json
+
+# List relationships
+bd relationship list --from <id> --json  # All relationships from entity
+bd relationship list --to <id> --json    # All relationships to entity
+bd relationship list --from bd-ent-alice --json
+bd relationship list --to bd-ent-auth --json
+
+# Show relationship details
+bd relationship show <id> --json
+bd relationship show bd-rel-a3f8e9 --json
+
+# Update relationship (e.g., extend validity)
+bd relationship update <id> --valid-until <time> --json
+bd relationship update bd-rel-a3f8e9 --valid-until "2027-01-15" --json
+
+# Delete relationship
+bd relationship delete <id> --json
+bd relationship delete bd-rel-a3f8e9 --json
+```
+
+**Relationship Types:**
+- `authored` - Created by
+- `depends-on` - Technical dependency
+- `implements` - Implementation of spec/design
+- `contains` - Hierarchical containment (replaces parent-child)
+- `blocks` - Blocks progress
+- `related` - Soft connection
+- `assigned-to` - Assignment relationship (with temporal validity)
+- Custom types via ontology registration
+
+**Temporal Validity:**
+- Relationships can have `valid-from` and `valid-until` timestamps
+- Useful for modeling assignments, memberships, temporary states
+- Query graph at specific points in time
+
+### Episode Management
+
+Episodes record the provenance of knowledge - how entities and relationships were discovered or created.
+
+```bash
+# Create an episode (provenance log)
+bd episode create --source <source> --file <file> --json
+
+# Examples:
+bd episode create --source "claude-session-42" --file "session-log.json" --json
+bd episode create --source "interview:alice" --file "notes-2026-03-16.md" --json
+bd episode create --source "code-review:pr-123" --file "review-comments.json" --json
+
+# List episodes
+bd episode list --json
+bd episode list --source "claude-session-42" --json
+bd episode list --since "2026-03-01" --json
+
+# Show episode details
+bd episode show <id> --json
+bd episode show bd-ep-a3f8e9 --json
+```
+
+**Episode Sources:**
+- AI session identifiers: `claude-session-42`, `gpt4-conv-xyz`
+- Human interactions: `interview:alice`, `meeting:standup-2026-03-16`
+- Automated discovery: `code-review:pr-123`, `test-run:build-456`
+- Custom sources for domain-specific provenance
+
+**Use Cases:**
+- Track which AI session discovered a bug
+- Record interview as source of requirement
+- Link code review to design decisions
+- Audit trail for compliance
+
+### Ontology Management
+
+Define custom entity types and relationship types with JSON schemas.
+
+```bash
+# Register a custom entity type
+bd ontology register-entity-type --name <type> --schema <file> --json
+
+# Example entity type schemas:
+# person-schema.json:
+# {
+#   "type": "object",
+#   "properties": {
+#     "name": {"type": "string"},
+#     "role": {"type": "string"},
+#     "expertise": {"type": "array", "items": {"type": "string"}}
+#   },
+#   "required": ["name"]
+# }
+
+bd ontology register-entity-type --name person --schema person-schema.json --json
+bd ontology register-entity-type --name component --schema component-schema.json --json
+
+# Register a custom relationship type
+bd ontology register-relationship-type --name <type> --schema <file> --json
+
+# Example relationship type schema:
+# assignment-schema.json:
+# {
+#   "type": "object",
+#   "properties": {
+#     "from": {"type": "string", "description": "person entity"},
+#     "to": {"type": "string", "description": "task or project entity"},
+#     "allocation": {"type": "number", "minimum": 0, "maximum": 100}
+#   },
+#   "temporal": true
+# }
+
+bd ontology register-relationship-type --name assigned-to --schema assignment-schema.json --json
+
+# List registered types
+bd ontology list --json
+bd ontology list --entity-types --json
+bd ontology list --relationship-types --json
+```
+
+**Schema Validation:**
+- JSON Schema format for entity and relationship properties
+- Enforced at creation/update time
+- Enables rich domain modeling
+- Built-in types: `issue`, `bug`, `feature`, `task`, `blocks`, `contains`, etc.
+
+### Graph Operations
+
+Explore and traverse the entity-relationship graph.
+
+```bash
+# Explore from an entity (breadth-first)
+bd graph explore <id> --depth <n> --json
+
+# Examples:
+bd graph explore bd-ent-alice --depth 2 --json  # 2 hops from Alice
+bd graph explore bd-ent-auth --depth 3 --json   # 3 hops from auth service
+
+# Traverse shortest path between two entities
+bd graph traverse <from-id> <to-id> --json
+bd graph traverse bd-ent-alice bd-ent-bug-42 --json
+bd graph traverse bd-ent-api bd-ent-db --json
+
+# Visualize graph (DOT format for Graphviz)
+bd graph visualize <id> --format dot --json
+bd graph visualize bd-ent-proj-x --format dot > project.dot
+dot -Tpng project.dot -o project.png  # Render with Graphviz
+
+# Visualize with depth limit
+bd graph visualize <id> --depth 2 --format dot --json
+bd graph visualize bd-ent-auth --depth 3 --format dot --json
+```
+
+**Graph Traversal Examples:**
+
+```bash
+# Find all dependencies of a component
+bd graph explore bd-ent-auth --depth 3 --json | \
+  jq '.nodes[] | select(.relationship_type == "depends-on")'
+
+# Find who worked on a feature
+bd graph traverse bd-ent-alice bd-ent-feature-oauth --json
+
+# Export project graph for visualization
+bd graph visualize bd-ent-proj-x --format dot > project.dot
+```
+
+**Visualization Formats:**
+- `dot` - Graphviz DOT format (pipe to `dot` command)
+- `json` - Structured graph data for custom visualization
+
 ## Dependencies & Labels
 
 ### Dependencies
 
+> **Deprecation Notice (v8.0+)**: `bd children` is deprecated in favor of `bd relationship list --type contains`. See [Memory System (v8)](#memory-system-v8) for the new relationship-based approach.
+
 ```bash
+# List hierarchical children (DEPRECATED - use bd relationship list)
+bd children <id>
+bd children <id> --json
+
 # Link discovered work (old way - two commands)
 bd dep add <discovered-id> <parent-id> --type discovered-from
 
@@ -593,7 +838,7 @@ See [CONFIG.md](CONFIG.md#example-import-orphan-handling) and [TROUBLESHOOTING.m
 ### Migration
 
 ```bash
-# Migrate databases after version upgrade
+# Migrate databases after version upgrade (v7 and earlier)
 bd migrate                                             # Detect and migrate old databases
 bd migrate --dry-run                                   # Preview migration
 bd migrate --cleanup --yes                             # Migrate and remove old files
@@ -618,6 +863,71 @@ bd info --schema --json                                # Get schema, tables, con
 - **issue_count_stable**: Issue count doesn't decrease unexpectedly
 
 These invariants prevent data loss and would have caught issues like GH #201 (missing issue_prefix after migration).
+
+### v8 Migration (Memory System)
+
+Migrate from the v7 issue system to the v8 entity-relationship memory system.
+
+```bash
+# Check migration status
+bd migrate status --json
+
+# Preview v8 migration (shows what will be transformed)
+bd migrate to-v8 --dry-run --json
+
+# Perform v8 migration
+bd migrate to-v8 --json
+
+# Validate v8 migration integrity
+bd migrate validate --json
+
+# Rollback to v7 (if migration issues occur)
+bd migrate rollback --json
+```
+
+**v8 Migration Process:**
+
+1. **Backup**: Automatically backs up v7 database before migration
+2. **Transform**: Converts issues → entities, dependencies → relationships
+3. **Validate**: Checks data integrity and schema consistency
+4. **Commit**: Finalizes migration if validation passes
+
+**What gets migrated:**
+
+- Issues → Entities (with `issue` entity type)
+- Bug/Feature/Task types → Entity types with corresponding schemas
+- Dependencies → Relationships (blocks, contains, discovered-from, etc.)
+- Parent-child hierarchy → `contains` relationships
+- Labels → Entity metadata
+- Comments → Associated with entities
+
+**Compatibility:**
+
+- Once migrated to v8, use [Compatibility Mode](#compatibility-mode) to run v7 commands
+- Rollback available if issues are detected
+- Migration is atomic - either fully succeeds or fully rolls back
+
+**Examples:**
+
+```bash
+# Check if migration needed
+bd migrate status --json
+# Output: {"current_version": "v7", "latest_version": "v8", "migration_needed": true}
+
+# Preview migration
+bd migrate to-v8 --dry-run
+# Shows: 42 issues → 42 entities, 15 dependencies → 15 relationships
+
+# Perform migration
+bd migrate to-v8 --json
+# Output: {"status": "success", "entities_created": 42, "relationships_created": 15}
+
+# Validate
+bd migrate validate --json
+# Output: {"valid": true, "checks": ["foreign_keys", "entity_integrity", "relationship_integrity"]}
+```
+
+
 
 ### Migrate to Sync Branch
 
@@ -663,6 +973,63 @@ bd migrate sync beads-sync --orphan                    # Delete and recreate as 
 - **Unpushed commit check**: If the branch has unpushed commits, migration fails with a helpful error. Use `--force` to override.
 - **Existing worktree**: If a worktree exists for the branch, it's automatically removed before migration.
 - **Non-destructive to remote**: The remote branch is not modified; use `git push --force` to update it after migration.
+
+### Compatibility Mode
+
+After migrating to v8, you can use compatibility mode to temporarily run v7 commands against the v8 database.
+
+```bash
+# Check current compatibility mode
+bd compat status
+bd compat status --json
+
+# Set compatibility mode
+bd compat set v7    # Enable v7 compatibility (translate v7 commands to v8)
+bd compat set v8    # Disable compatibility mode (native v8 commands only)
+```
+
+**How it works:**
+
+**v7 mode (compatibility enabled):**
+- `bd create` → Translates to `bd entity create --entity-type issue`
+- `bd children <id>` → Translates to `bd relationship list --from <id> --type contains`
+- `bd dep add` → Translates to `bd relationship create`
+- All v7 commands work transparently with v8 data
+
+**v8 mode (native, default after migration):**
+- Only v8 commands available (`bd entity`, `bd relationship`, etc.)
+- v7 commands show deprecation warnings
+- Recommended for new workflows
+
+**Examples:**
+
+```bash
+# After migration, enable v7 compatibility for existing scripts
+bd compat set v7
+
+# Now v7 commands work
+bd create "Bug fix" -t bug -p 1 --json
+# Internally: bd entity create --entity-type issue --name "Bug fix" --metadata '{"type":"bug","priority":1}'
+
+bd children bd-42
+# Internally: bd relationship list --from bd-42 --type contains
+
+# Switch back to v8 native mode
+bd compat set v8
+
+# Now only v8 commands work
+bd entity create --entity-type person --name "Alice" --json
+```
+
+**When to use v7 compatibility:**
+- Gradual migration of existing scripts and workflows
+- Temporary use of legacy tools that expect v7 commands
+- Testing and validation during migration period
+
+**When to use v8 native mode:**
+- New workflows leveraging the full memory system
+- Graph traversal and custom entity types
+- After completing migration and updating all scripts
 
 ### Sync Operations
 

@@ -30,6 +30,13 @@ var createCmd = &cobra.Command{
 	Short:   "Create a new issue (or multiple issues from markdown file)",
 	Args:    cobra.MinimumNArgs(0), // Changed to allow no args when using -f
 	Run: func(cmd *cobra.Command, args []string) {
+		// Deprecation warning (only in human-readable mode)
+		if !jsonOutput {
+			fmt.Fprintln(os.Stderr, "⚠️  Warning: 'bd create' is deprecated. Use 'bd entity create' instead.")
+			fmt.Fprintln(os.Stderr, "   See 'bd entity --help' for details.")
+			fmt.Fprintln(os.Stderr, "")
+		}
+
 		CheckReadonly("create")
 		file, _ := cmd.Flags().GetString("file")
 
