@@ -30,6 +30,7 @@ var migrationsList = []Migration{
 	{"cleanup_autopush_metadata", migrations.MigrateCleanupAutopushMetadata},
 	{"uuid_primary_keys", migrations.MigrateUUIDPrimaryKeys},
 	{"add_no_history_column", migrations.MigrateAddNoHistoryColumn},
+	{"v8_1_extensions", migrations.MigrateV81Extensions},
 }
 
 // RunMigrations executes all registered Dolt migrations in order.
@@ -51,6 +52,9 @@ func RunMigrations(db *sql.DB) error {
 		"wisp_comments", "metadata", "child_counters", "issue_counter",
 		"issue_snapshots", "compaction_snapshots", "federation_peers",
 		"dolt_ignore",
+		// v8 knowledge graph tables
+		"entities", "relationships", "episodes", "entity_types", 
+		"relationship_types", "entity_embeddings",
 	}
 	for _, table := range migrationTables {
 		_, _ = db.Exec("CALL DOLT_ADD(?)", table)

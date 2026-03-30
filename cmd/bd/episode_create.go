@@ -7,9 +7,12 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/beads/internal/extraction"
 	"github.com/steveyegge/beads/internal/idgen"
 	"github.com/steveyegge/beads/internal/types"
 )
+
+var autoExtract bool
 
 // episodeCreateCmd creates a new episode from raw data.
 var episodeCreateCmd = &cobra.Command{
@@ -93,6 +96,19 @@ Examples:
 			FatalError("failed to create episode: %v", err)
 		}
 
+		// Auto-extract if flag is set
+		if autoExtract {
+			apiKey := os.Getenv("ANTHROPIC_API_KEY")
+			if apiKey == "" {
+				fmt.Fprintln(os.Stderr, "Warning: --extract requires ANTHROPIC_API_KEY, skipping extraction")
+			} else {
+				_, err := extraction.ExtractFromEpisode(ctx, store, episode.ID, apiKey)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: extraction failed: %v\n", err)
+				}
+			}
+		}
+
 		// Output result
 		if jsonOutput {
 			result := map[string]interface{}{
@@ -121,4 +137,5 @@ func init() {
 	episodeCreateCmd.Flags().String("file", "", "Path to raw data file [REQUIRED]")
 	episodeCreateCmd.Flags().String("timestamp", "", "Override ingestion timestamp (default: now)")
 	episodeCreateCmd.Flags().StringSlice("entities", nil, "Entity IDs extracted from this episode")
+	episodeCreateCmd.Flags().BoolVar(&autoExtract, "extract", false, "Auto-extract entities after creation")
 }

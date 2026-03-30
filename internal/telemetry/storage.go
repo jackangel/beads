@@ -439,6 +439,9 @@ func (s *InstrumentedStorage) DeleteEntity(ctx context.Context, id string) error
 
 func (s *InstrumentedStorage) SearchEntities(ctx context.Context, filters storage.EntityFilters) ([]*types.Entity, error) {
 	attrs := []attribute.KeyValue{attribute.String("bd.entity.type", filters.EntityType)}
+	if filters.TextQuery != "" {
+		attrs = append(attrs, attribute.String("bd.entity.text_query", filters.TextQuery))
+	}
 	ctx, span, t := s.op(ctx, "SearchEntities", attrs...)
 	entities, err := s.inner.SearchEntities(ctx, filters)
 	if err == nil {
@@ -446,6 +449,30 @@ func (s *InstrumentedStorage) SearchEntities(ctx context.Context, filters storag
 	}
 	s.done(ctx, span, t, err, attrs...)
 	return entities, err
+}
+
+func (s *InstrumentedStorage) MergeEntities(ctx context.Context, sourceEntityID, targetEntityID, actor string) error {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.entity.source", sourceEntityID),
+		attribute.String("bd.entity.target", targetEntityID),
+		attribute.String("bd.actor", actor),
+	}
+	ctx, span, t := s.op(ctx, "MergeEntities", attrs...)
+	err := s.inner.MergeEntities(ctx, sourceEntityID, targetEntityID, actor)
+	s.done(ctx, span, t, err, attrs...)
+	return err
+}
+
+func (s *InstrumentedStorage) RetrieveMemory(ctx context.Context, query storage.MemoryQuery) (*storage.MemoryContext, error) {
+	attrs := []attribute.KeyValue{
+		attribute.String("bd.query.text", query.TextQuery),
+		attribute.Int("bd.query.max_hops", query.MaxHops),
+		attribute.Int("bd.query.top_k", query.TopK),
+	}
+	ctx, span, t := s.op(ctx, "RetrieveMemory", attrs...)
+	result, err := s.inner.RetrieveMemory(ctx, query)
+	s.done(ctx, span, t, err, attrs...)
+	return result, err
 }
 
 // ── Relationship operations (v8) ────────────────────────────────────────────

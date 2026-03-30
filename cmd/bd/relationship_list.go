@@ -46,10 +46,23 @@ Examples:
 		toEntity, _ := cmd.Flags().GetString("to")
 		relType, _ := cmd.Flags().GetString("type")
 		validAtStr, _ := cmd.Flags().GetString("valid-at")
+		minConfidence, _ := cmd.Flags().GetFloat64("min-confidence")
+		maxConfidence, _ := cmd.Flags().GetFloat64("max-confidence")
 
 		// Validate that at least one of --from or --to is provided
 		if fromEntity == "" && toEntity == "" {
 			FatalErrorRespectJSON("at least one of --from or --to is required")
+		}
+
+		// Validate confidence ranges
+		if cmd.Flags().Changed("min-confidence") && (minConfidence < 0.0 || minConfidence > 1.0) {
+			FatalErrorRespectJSON("--min-confidence must be between 0.0 and 1.0, got %.2f", minConfidence)
+		}
+		if cmd.Flags().Changed("max-confidence") && (maxConfidence < 0.0 || maxConfidence > 1.0) {
+			FatalErrorRespectJSON("--max-confidence must be between 0.0 and 1.0, got %.2f", maxConfidence)
+		}
+		if cmd.Flags().Changed("min-confidence") && cmd.Flags().Changed("max-confidence") && minConfidence > maxConfidence {
+			FatalErrorRespectJSON("--min-confidence must be less than or equal to --max-confidence")
 		}
 
 		// Parse valid-at time (optional)
@@ -68,6 +81,14 @@ Examples:
 			TargetEntityID:   toEntity,
 			RelationshipType: relType,
 			ValidAt:          validAt,
+		}
+
+		// Apply confidence filters if flags were set
+		if cmd.Flags().Changed("min-confidence") {
+			filters.MinConfidence = &minConfidence
+		}
+		if cmd.Flags().Changed("max-confidence") {
+			filters.MaxConfidence = &maxConfidence
 		}
 
 		// Search relationships
@@ -122,6 +143,8 @@ func init() {
 	relationshipListCmd.Flags().String("to", "", "Target entity ID (list incoming relationships)")
 	relationshipListCmd.Flags().String("type", "", "Filter by relationship type")
 	relationshipListCmd.Flags().String("valid-at", "", "Filter to relationships valid at this time")
+	relationshipListCmd.Flags().Float64("min-confidence", 0.0, "Minimum confidence threshold (0.0-1.0)")
+	relationshipListCmd.Flags().Float64("max-confidence", 1.0, "Maximum confidence threshold (0.0-1.0)")
 
 	relationshipCmd.AddCommand(relationshipListCmd)
 }

@@ -2,6 +2,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -21,6 +22,13 @@ type Relationship struct {
 	// ===== Custom Metadata =====
 	// Metadata holds arbitrary JSON data for flexible extension
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+
+	// ===== Confidence Score =====
+	// Confidence represents the certainty of this relationship (0.0-1.0).
+	// AI-extracted relationships typically start with lower confidence.
+	// Human-curated relationships default to 1.0.
+	// NULL (nil) is treated as 1.0 for filtering.
+	Confidence *float64 `json:"confidence,omitempty"`
 
 	// ===== Timestamps =====
 	CreatedAt time.Time `json:"created_at"`
@@ -45,4 +53,17 @@ func (r *Relationship) IsValidAt(t time.Time) bool {
 
 	// Check if time is before the relationship ends
 	return t.Before(*r.ValidUntil)
+}
+
+// ValidateConfidence checks if the confidence score is valid.
+// Confidence must be between 0.0 and 1.0 (inclusive) if set.
+// Returns nil if confidence is nil or valid, error otherwise.
+func (r *Relationship) ValidateConfidence() error {
+	if r.Confidence == nil {
+		return nil
+	}
+	if *r.Confidence < 0.0 || *r.Confidence > 1.0 {
+		return fmt.Errorf("confidence must be between 0.0 and 1.0, got %.2f", *r.Confidence)
+	}
+	return nil
 }

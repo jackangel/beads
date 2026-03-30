@@ -43,10 +43,11 @@ Examples:
 		validFromStr, _ := cmd.Flags().GetString("valid-from")
 		validUntilStr, _ := cmd.Flags().GetString("valid-until")
 		metadataStr, _ := cmd.Flags().GetString("metadata")
+		confidence, _ := cmd.Flags().GetFloat64("confidence")
 
 		// Validate that at least one field is being updated
-		if validFromStr == "" && validUntilStr == "" && metadataStr == "" {
-			FatalErrorRespectJSON("at least one of --valid-from, --valid-until, or --metadata must be specified")
+		if validFromStr == "" && validUntilStr == "" && metadataStr == "" && !cmd.Flags().Changed("confidence") {
+			FatalErrorRespectJSON("at least one of --valid-from, --valid-until, --metadata, or --confidence must be specified")
 		}
 
 		// Retrieve existing relationship to validate
@@ -95,6 +96,15 @@ Examples:
 			}
 		}
 
+		// Update confidence if flag was changed
+		if cmd.Flags().Changed("confidence") {
+			// Validate confidence range
+			if confidence < 0.0 || confidence > 1.0 {
+				FatalErrorRespectJSON("--confidence must be between 0.0 and 1.0, got %.2f", confidence)
+			}
+			update.Confidence = &confidence
+		}
+
 		// Update relationship
 		if err := store.UpdateRelationship(ctx, update); err != nil {
 			FatalErrorRespectJSON("failed to update relationship: %v", err)
@@ -124,6 +134,11 @@ Examples:
 			if validUntilStr != "" {
 				fmt.Printf("  Valid until: %s\n", updated.ValidUntil.Format("2006-01-02 15:04"))
 			}
+			if cmd.Flags().Changed("confidence") {
+				if updated.Confidence != nil {
+					fmt.Printf("  Confidence: %.2f\n", *updated.Confidence)
+				}
+			}
 			if metadataStr != "" {
 				fmt.Printf("  Metadata updated\n")
 			}
@@ -135,6 +150,7 @@ func init() {
 	relationshipUpdateCmd.Flags().String("valid-from", "", "Update start of validity window")
 	relationshipUpdateCmd.Flags().String("valid-until", "", "Update end of validity window")
 	relationshipUpdateCmd.Flags().String("metadata", "", "Update metadata as JSON object")
+	relationshipUpdateCmd.Flags().Float64("confidence", 0.0, "Update confidence score 0.0-1.0")
 
 	relationshipCmd.AddCommand(relationshipUpdateCmd)
 }

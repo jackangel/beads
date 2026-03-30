@@ -45,6 +45,7 @@ Examples:
 		validFromStr, _ := cmd.Flags().GetString("valid-from")
 		validUntilStr, _ := cmd.Flags().GetString("valid-until")
 		metadataStr, _ := cmd.Flags().GetString("metadata")
+		confidence, _ := cmd.Flags().GetFloat64("confidence")
 
 		// Validate required fields
 		if fromEntity == "" {
@@ -55,6 +56,11 @@ Examples:
 		}
 		if relType == "" {
 			FatalErrorRespectJSON("--type is required (relationship type)")
+		}
+
+		// Validate confidence range
+		if confidence < 0.0 || confidence > 1.0 {
+			FatalErrorRespectJSON("--confidence must be between 0.0 and 1.0, got %.2f", confidence)
 		}
 
 		// Parse valid-from (default to now if not specified)
@@ -106,6 +112,7 @@ Examples:
 			TargetEntityID:   toEntity,
 			ValidFrom:        validFrom,
 			ValidUntil:       validUntil,
+			Confidence:       &confidence,
 			Metadata:         metadata,
 			CreatedAt:        time.Now().UTC(),
 			CreatedBy:        actor,
@@ -148,6 +155,7 @@ func init() {
 	relationshipCreateCmd.Flags().String("type", "", "Relationship type (required)")
 	relationshipCreateCmd.Flags().String("valid-from", "", "Start of validity window (default: now)")
 	relationshipCreateCmd.Flags().String("valid-until", "", "End of validity window (optional)")
+	relationshipCreateCmd.Flags().Float64("confidence", 1.0, "Confidence score 0.0-1.0 (default 1.0)")
 	relationshipCreateCmd.Flags().String("metadata", "", "Additional metadata as JSON object")
 
 	relationshipCmd.AddCommand(relationshipCreateCmd)

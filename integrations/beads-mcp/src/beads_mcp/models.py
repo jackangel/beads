@@ -307,3 +307,120 @@ class InitResult(BaseModel):
     database: str
     prefix: str
     message: str
+
+
+# =============================================================================
+# V8 KNOWLEDGE GRAPH MODELS
+# =============================================================================
+# Models for entity, relationship, episode, and ontology types
+# Added for v8+ beads knowledge graph layer
+
+
+class Entity(BaseModel):
+    """Entity model matching bd entity --json output."""
+
+    id: str
+    entity_type: str
+    name: str
+    summary: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str  # ISO 8601 datetime string
+    updated_at: str | None = None
+    created_by: str
+    updated_by: str | None = None
+    merged_into: str | None = None  # v8.1 soft-delete tracking
+
+
+class Relationship(BaseModel):
+    """Relationship model matching bd relationship --json output."""
+
+    id: str
+    source_entity_id: str
+    relationship_type: str
+    target_entity_id: str
+    valid_from: str  # ISO 8601 datetime string
+    valid_until: str | None = None
+    confidence: float | None = None  # v8.1 confidence scoring (0.0-1.0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    created_by: str
+
+
+class Episode(BaseModel):
+    """Episode model matching bd episode --json output."""
+
+    id: str
+    timestamp: str  # ISO 8601 datetime string
+    source: str  # e.g., "github", "jira", "manual", "conversation"
+    raw_data_size: int  # Size in bytes (raw_data is BLOB, not returned in JSON)
+    entities_extracted: list[str] = Field(default_factory=list)  # entity IDs
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    extracted_at: str | None = None  # v8.1 extraction timestamp
+
+
+class EntityType(BaseModel):
+    """Entity type schema definition."""
+
+    name: str
+    schema: dict[str, Any]  # JSON schema for metadata validation
+    description: str
+    created_at: str
+
+
+class RelationshipType(BaseModel):
+    """Relationship type schema definition."""
+
+    name: str
+    schema: dict[str, Any]  # JSON schema for relationship metadata
+    description: str
+    created_at: str
+
+
+# =============================================================================
+# V8 KNOWLEDGE GRAPH PARAMS
+# =============================================================================
+# Parameter models for MCP tool inputs (entity/relationship/episode operations)
+
+
+class CreateEntityParams(BaseModel):
+    """Parameters for creating an entity."""
+
+    entity_type: str
+    name: str
+    summary: str
+    metadata: dict[str, Any] | None = None
+    created_by: str | None = None
+    id: str | None = None  # Allow custom ID
+
+
+class EntitySearchParams(BaseModel):
+    """Parameters for searching entities."""
+
+    entity_type: str | None = None
+    name: str | None = None
+    created_by: str | None = None
+    limit: int = 50
+    offset: int = 0
+
+
+class CreateRelationshipParams(BaseModel):
+    """Parameters for creating a relationship."""
+
+    source_entity_id: str
+    relationship_type: str
+    target_entity_id: str
+    valid_from: str | None = None  # ISO 8601, defaults to now
+    valid_until: str | None = None
+    confidence: float | None = None  # v8.1
+    metadata: dict[str, Any] | None = None
+
+
+class CreateEpisodeParams(BaseModel):
+    """Parameters for creating an episode."""
+
+    source: str
+    file_path: str  # Path to raw data file
+    timestamp: str | None = None  # ISO 8601, defaults to now
+    entities_extracted: list[str] | None = None
+    extract: bool = False  # Auto-extract after creation?

@@ -58,14 +58,19 @@ func (s *DoltStore) CreateRelationship(ctx context.Context, rel *types.Relations
 		rel.CreatedAt = now
 	}
 
+	// Validate confidence if provided
+	if err := rel.ValidateConfidence(); err != nil {
+		return fmt.Errorf("invalid confidence: %w", err)
+	}
+
 	// Insert relationship
-	query := `INSERT INTO relationships (id, source_entity_id, relationship_type, target_entity_id, valid_from, valid_until, metadata, created_at, created_by)
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO relationships (id, source_entity_id, relationship_type, target_entity_id, valid_from, valid_until, metadata, created_at, created_by, confidence)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err = tx.ExecContext(ctx, query,
 		rel.ID, rel.SourceEntityID, rel.RelationshipType, rel.TargetEntityID,
 		rel.ValidFrom, rel.ValidUntil,
 		string(metadataJSON),
-		rel.CreatedAt, rel.CreatedBy)
+		rel.CreatedAt, rel.CreatedBy, rel.Confidence)
 	if err != nil {
 		return fmt.Errorf("failed to insert relationship: %w", err)
 	}
@@ -90,19 +95,20 @@ func (s *DoltStore) GetRelationship(ctx context.Context, id string) (*types.Rela
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	query := `SELECT id, source_entity_id, relationship_type, target_entity_id, valid_from, valid_until, metadata, created_at, created_by
+	query := `SELECT id, source_entity_id, relationship_type, target_entity_id, valid_from, valid_until, metadata, created_at, created_by, confidence
 	          FROM relationships WHERE id = ?`
 
 	var rel types.Relationship
 	var metadataJSON sql.NullString
 	var validUntil sql.NullTime
 	var createdBy sql.NullString
+	var confidence sql.NullFloat64
 
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&rel.ID, &rel.SourceEntityID, &rel.RelationshipType, &rel.TargetEntityID,
 		&rel.ValidFrom, &validUntil,
 		&metadataJSON,
-		&rel.CreatedAt, &createdBy)
+		&rel.CreatedAt, &createdBy, &confidence)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("%w: relationship %s", storage.ErrNotFound, id)
@@ -117,6 +123,9 @@ func (s *DoltStore) GetRelationship(ctx context.Context, id string) (*types.Rela
 	}
 	if createdBy.Valid {
 		rel.CreatedBy = createdBy.String
+	}
+	if confidence.Valid {
+		rel.Confidence = &confidence.Float64
 	}
 
 	// Unmarshal metadata
@@ -193,6 +202,14 @@ func (s *DoltStore) UpdateRelationship(ctx context.Context, rel *types.Relations
 		}
 		setClauses = append(setClauses, "metadata = ?")
 		args = append(args, string(metadataJSON))
+	}
+	if rel.Confidence != nil {
+		// Validate confidence before updating
+		if err := rel.ValidateConfidence(); err != nil {
+			return fmt.Errorf("invalid confidence: %w", err)
+		}
+		setClauses = append(setClauses, "confidence = ?")
+		args = append(args, rel.Confidence)
 	}
 
 	// If no fields to update, return error
@@ -316,8 +333,18 @@ func (s *DoltStore) SearchRelationships(ctx context.Context, filters storage.Rel
 		args = append(args, *filters.ValidAtStart)
 	}
 
+	// Confidence filtering: treat NULL as 1.0
+	if filters.MinConfidence != nil {
+		whereClauses = append(whereClauses, "COALESCE(confidence, 1.0) >= ?")
+		args = append(args, *filters.MinConfidence)
+	}
+	if filters.MaxConfidence != nil {
+		whereClauses = append(whereClauses, "COALESCE(confidence, 1.0) <= ?")
+		args = append(args, *filters.MaxConfidence)
+	}
+
 	// Build base query
-	query := "SELECT id, source_entity_id, relationship_type, target_entity_id, valid_from, valid_until, metadata, created_at, created_by FROM relationships"
+	query := "SELECT id, source_entity_id, relationship_type, target_entity_id, valid_from, valid_until, metadata, created_at, created_by, confidence FROM relationships"
 	if len(whereClauses) > 0 {
 		query += " WHERE " + strings.Join(whereClauses, " AND ")
 	}
@@ -345,12 +372,13 @@ func (s *DoltStore) SearchRelationships(ctx context.Context, filters storage.Rel
 		var metadataJSON sql.NullString
 		var validUntil sql.NullTime
 		var createdBy sql.NullString
+		var confidence sql.NullFloat64
 
 		err := rows.Scan(
 			&rel.ID, &rel.SourceEntityID, &rel.RelationshipType, &rel.TargetEntityID,
 			&rel.ValidFrom, &validUntil,
 			&metadataJSON,
-			&rel.CreatedAt, &createdBy)
+			&rel.CreatedAt, &createdBy, &confidence)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan relationship: %w", err)
 		}
@@ -361,6 +389,9 @@ func (s *DoltStore) SearchRelationships(ctx context.Context, filters storage.Rel
 		}
 		if createdBy.Valid {
 			rel.CreatedBy = createdBy.String
+		}
+		if confidence.Valid {
+			rel.Confidence = &confidence.Float64
 		}
 
 		// Unmarshal metadata
@@ -428,7 +459,7 @@ func (s *DoltStore) GetRelationshipsWithTemporalFilter(ctx context.Context, enti
 	args = append(args, validAt)
 
 	// Build query
-	query := `SELECT id, source_entity_id, relationship_type, target_entity_id, valid_from, valid_until, metadata, created_at, created_by 
+	query := `SELECT id, source_entity_id, relationship_type, target_entity_id, valid_from, valid_until, metadata, created_at, created_by, confidence 
 	          FROM relationships 
 	          WHERE ` + strings.Join(whereClauses, " AND ") + `
 	          ORDER BY created_at DESC`
@@ -445,12 +476,13 @@ func (s *DoltStore) GetRelationshipsWithTemporalFilter(ctx context.Context, enti
 		var metadataJSON sql.NullString
 		var validUntil sql.NullTime
 		var createdBy sql.NullString
+		var confidence sql.NullFloat64
 
 		err := rows.Scan(
 			&rel.ID, &rel.SourceEntityID, &rel.RelationshipType, &rel.TargetEntityID,
 			&rel.ValidFrom, &validUntil,
 			&metadataJSON,
-			&rel.CreatedAt, &createdBy)
+			&rel.CreatedAt, &createdBy, &confidence)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan relationship: %w", err)
 		}
@@ -461,6 +493,9 @@ func (s *DoltStore) GetRelationshipsWithTemporalFilter(ctx context.Context, enti
 		}
 		if createdBy.Valid {
 			rel.CreatedBy = createdBy.String
+		}
+		if confidence.Valid {
+			rel.Confidence = &confidence.Float64
 		}
 
 		// Unmarshal metadata

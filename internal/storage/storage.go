@@ -27,6 +27,24 @@ var ErrNotInitialized = errors.New("database not initialized")
 // ErrPrefixMismatch is returned when an issue ID does not match the configured prefix.
 var ErrPrefixMismatch = errors.New("prefix mismatch")
 
+// MemoryQuery specifies what context to retrieve from the knowledge graph.
+type MemoryQuery struct {
+	TextQuery     string     // Natural language query for semantic search
+	EntityIDs     []string   // Specific entities to include
+	ValidAt       *time.Time // Temporal filter (default: now)
+	MaxHops       int        // Graph traversal depth (default: 2)
+	TopK          int        // Max entities from semantic search (default: 5)
+	MinConfidence float64    // Filter relationships by confidence (default: 0.5)
+}
+
+// MemoryContext holds the retrieved context from the knowledge graph.
+type MemoryContext struct {
+	Entities        []*types.Entity       `json:"entities"`         // All entities in the subgraph
+	Relationships   []*types.Relationship `json:"relationships"`    // All relationships in the subgraph
+	SourceEpisodes  []*types.Episode      `json:"source_episodes"`  // Provenance episodes
+	RelevanceScores map[string]float64    `json:"relevance_scores"` // entity ID -> relevance score
+}
+
 // EntityStore defines operations for entity management (knowledge graph nodes).
 // Entities represent any trackable object in the system - not just issues, but also
 // people, components, documents, or any domain concept that can have relationships.
@@ -50,6 +68,13 @@ type EntityStore interface {
 	// SearchEntities finds entities matching the provided filters.
 	// Returns an empty slice if no entities match the criteria.
 	SearchEntities(ctx context.Context, filters EntityFilters) ([]*types.Entity, error)
+
+	// MergeEntities merges sourceEntityID into targetEntityID.
+	// - Moves all relationships (source and target) from source entity to target entity
+	// - Sets source entity's merged_into field to targetEntityID
+	// - Preserves metadata and summary by appending to target (optional)
+	// - Returns error if source or target not found, or if source already merged
+	MergeEntities(ctx context.Context, sourceEntityID, targetEntityID, actor string) error
 }
 
 // EntityFilters defines search criteria for entities.
@@ -62,6 +87,20 @@ type EntityFilters struct {
 	// Name performs a partial case-insensitive match on the entity name.
 	// Empty string matches all names.
 	Name string
+
+	// TextQuery enables semantic/text-similarity search using cosine similarity.
+	// When set, the implementation performs two-step filtering:
+	// 1. SQL filters (EntityType, Name, etc.) narrow to candidate set
+	// 2. In-memory cosine similarity ranks candidates by relevance
+	// Results are sorted by similarity score descending.
+	// Empty string disables text similarity search.
+	TextQuery string
+
+	// TextSimilarityThreshold sets the minimum similarity score (0.0-1.0) for TextQuery results.
+	// Only entities with score >= threshold are returned.
+	// Default is 0.1 if TextQuery is set and this is 0.
+	// Ignored when TextQuery is empty.
+	TextSimilarityThreshold float64
 
 	// Metadata filters entities by matching metadata key-value pairs.
 	// An entity matches if it contains all specified metadata entries.
@@ -120,6 +159,16 @@ type RelationshipFilters struct {
 	// Metadata filters relationships by matching metadata key-value pairs.
 	// A relationship matches if it contains all specified metadata entries.
 	Metadata map[string]interface{}
+
+	// MinConfidence filters relationships with confidence >= this value.
+	// NULL confidence in database is treated as 1.0 for comparison.
+	// Nil value means no minimum confidence filter.
+	MinConfidence *float64
+
+	// MaxConfidence filters relationships with confidence <= this value.
+	// NULL confidence in database is treated as 1.0 for comparison.
+	// Nil value means no maximum confidence filter.
+	MaxConfidence *float64
 
 	// Limit restricts the maximum number of results returned.
 	// Zero or negative values return all matching results.
@@ -319,6 +368,11 @@ type Storage interface {
 
 	// Transactions
 	RunInTransaction(ctx context.Context, commitMsg string, fn func(tx Transaction) error) error
+
+	// Memory Retrieval
+	// RetrieveMemory assembles relevant context from the knowledge graph based on query parameters.
+	// It performs semantic search, graph traversal, temporal filtering, and episode lookup.
+	RetrieveMemory(ctx context.Context, query MemoryQuery) (*MemoryContext, error)
 
 	// Lifecycle
 	Close() error

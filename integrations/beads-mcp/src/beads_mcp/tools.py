@@ -21,14 +21,23 @@ from .models import (
     BlockedParams,
     ClaimIssueParams,
     CloseIssueParams,
+    CreateEntityParams,
+    CreateEpisodeParams,
     CreateIssueParams,
+    CreateRelationshipParams,
     DependencyType,
+    Entity,
+    EntitySearchParams,
+    EntityType,
+    Episode,
     InitParams,
     Issue,
     IssueStatus,
     IssueType,
     ListIssuesParams,
     ReadyWorkParams,
+    Relationship,
+    RelationshipType,
     ReopenIssueParams,
     ShowIssueParams,
     Stats,
@@ -279,20 +288,24 @@ async def _reconnect_client(canonical: str, max_retries: int = 3) -> BdClientBas
     )
 
 
-async def _get_client() -> BdClientBase:
+async def _get_client(working_dir: str | None = None) -> BdClientBase:
     """Get a BdClient instance for the current workspace.
     
     Uses connection pool to manage per-project clients.
     Workspace is auto-detected using the same logic as CLI:
-    1. current_workspace ContextVar (from workspace_root parameter)
-    2. BEADS_WORKING_DIR environment variable
-    3. Walk up from CWD looking for .beads/*.db
+    1. working_dir parameter (explicit override)
+    2. current_workspace ContextVar (from workspace_root parameter)
+    3. BEADS_WORKING_DIR environment variable
+    4. Walk up from CWD looking for .beads/*.db
     
     Performs health check before returning cached client.
     On failure, drops from pool and attempts reconnection with exponential backoff.
     
     Performs version check on first connection to each workspace.
     Uses CLI client for all operations.
+
+    Args:
+        working_dir: Optional workspace directory override
 
     Returns:
         Configured BdClientBase instance for the current workspace
@@ -301,7 +314,7 @@ async def _get_client() -> BdClientBase:
         BdError: If no workspace found, or bd is not installed, or version is incompatible
     """
     # Determine workspace using standard search order (matches Go CLI)
-    workspace = current_workspace.get() or os.environ.get("BEADS_WORKING_DIR")
+    workspace = working_dir or current_workspace.get() or os.environ.get("BEADS_WORKING_DIR")
     
     # Auto-detect from CWD if not explicitly set (NEW!)
     if not workspace:
@@ -371,6 +384,10 @@ async def beads_ready_work(
     Perfect for agents to claim next work!
 
     Use 'parent' to filter to all descendants of an epic/bead.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     params = ReadyWorkParams(
@@ -397,7 +414,12 @@ async def beads_list_issues(
     unassigned: Annotated[bool, "Filter to only unassigned issues"] = False,
     limit: Annotated[int, "Maximum number of issues to return (1-100)"] = 20,
 ) -> list[Issue]:
-    """List all issues with optional filters."""
+    """List all issues with optional filters.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
+    """
     client = await _get_client()
 
     params = ListIssuesParams(
@@ -420,6 +442,10 @@ async def beads_show_issue(
     """Show detailed information about a specific issue.
 
     Includes full description, dependencies, and dependents.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     params = ShowIssueParams(issue_id=issue_id)
@@ -450,6 +476,10 @@ async def beads_create_issue(
 
     Use this when you discover new work during your session.
     Link it back with beads_add_dependency using 'discovered-from' type.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     params = CreateIssueParams(
@@ -485,6 +515,10 @@ async def beads_update_issue(
     Note: Setting status to 'closed' or 'open' will automatically route to
     beads_close_issue() or beads_reopen_issue() respectively to ensure
     proper approval workflows are followed.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     # Smart routing: intercept lifecycle status changes and route to dedicated tools
     if status == "closed":
@@ -521,6 +555,10 @@ async def beads_claim_issue(
 
     Uses `bd update <id> --claim` semantics: sets assignee + in_progress in one
     compare-and-swap operation and fails if already claimed.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     params = ClaimIssueParams(issue_id=issue_id)
@@ -534,6 +572,10 @@ async def beads_close_issue(
     """Close (complete) an issue.
 
     Mark work as done when you've finished implementing/fixing it.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     params = CloseIssueParams(issue_id=issue_id, reason=reason)
@@ -548,6 +590,10 @@ async def beads_reopen_issue(
 
     Sets status to 'open' and clears the closed_at timestamp.
     More explicit than 'update --status open'.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     params = ReopenIssueParams(issue_ids=issue_ids, reason=reason)
@@ -571,6 +617,10 @@ async def beads_add_dependency(
     - discovered-from: Track that issue_id was discovered while working on depends_on_id
 
     Use 'discovered-from' when you find new work during your session.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     params = AddDependencyParams(
@@ -599,6 +649,10 @@ async def beads_stats() -> Stats:
 
     Returns total issues, open, in_progress, closed, blocked, ready issues,
     and average lead time in hours.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     return await client.stats()
@@ -612,6 +666,10 @@ async def beads_blocked(
     Returns issues that have blocking dependencies, showing what blocks them.
 
     Use 'parent' to filter to all descendants of an epic/bead.
+
+    DEPRECATED: This tool uses the legacy v7 issue-tracking API.
+    Consider using the v8 knowledge graph API (entity/relationship/episode tools) for new work.
+    Legacy tools will be maintained for backward compatibility.
     """
     client = await _get_client()
     params = BlockedParams(parent_id=parent)
@@ -707,3 +765,523 @@ async def beads_init(
     client = await _get_client()
     params = InitParams(prefix=prefix)
     return await client.init(params)
+
+
+# =============================================================================
+# V8 Knowledge Graph API (Entity/Relationship/Episode/Ontology)
+# =============================================================================
+
+
+async def beads_entity_create(
+    entity_type: Annotated[str, "Type of entity (e.g., 'person', 'project', 'meeting')"],
+    name: Annotated[str, "Entity name (unique within type)"],
+    summary: Annotated[str, "Brief description of the entity"],
+    metadata: Annotated[dict[str, Any] | None, "Additional structured data (optional)"] = None,
+    created_by: Annotated[str | None, "Creator identifier (optional)"] = None,
+    id: Annotated[str | None, "Custom entity ID (optional, auto-generated if not provided)"] = None,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> Entity:
+    """Create a new entity in the knowledge graph.
+    
+    Args:
+        entity_type: Type of entity (e.g., "person", "project", "meeting")
+        name: Entity name (unique within type)
+        summary: Brief description of the entity
+        metadata: Additional structured data (optional)
+        created_by: Creator identifier (optional)
+        id: Custom entity ID (optional, auto-generated if not provided)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        Entity: Created entity with ID
+    """
+    client = await _get_client(working_dir)
+    params = CreateEntityParams(
+        entity_type=entity_type,
+        name=name,
+        summary=summary,
+        metadata=metadata,
+        created_by=created_by,
+        id=id
+    )
+    return await client.create_entity(params)
+
+
+async def beads_entity_list(
+    entity_type: Annotated[str | None, "Filter by entity type (optional)"] = None,
+    name: Annotated[str | None, "Filter by name substring (optional)"] = None,
+    created_by: Annotated[str | None, "Filter by creator (optional)"] = None,
+    limit: Annotated[int, "Maximum number of results (default 50)"] = 50,
+    offset: Annotated[int, "Pagination offset (default 0)"] = 0,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> list[Entity]:
+    """List entities with optional filtering.
+    
+    Args:
+        entity_type: Filter by entity type (optional)
+        name: Filter by name substring (optional)
+        created_by: Filter by creator (optional)
+        limit: Maximum number of results (default 50)
+        offset: Pagination offset (default 0)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        List[Entity]: Matching entities
+    """
+    client = await _get_client(working_dir)
+    params = EntitySearchParams(
+        entity_type=entity_type,
+        name=name,
+        created_by=created_by,
+        limit=limit,
+        offset=offset
+    )
+    return await client.list_entities(params)
+
+
+async def beads_entity_show(
+    entity_id: Annotated[str, "Entity ID"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> Entity:
+    """Show detailed information about an entity.
+    
+    Args:
+        entity_id: Entity ID
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        Entity: Full entity details
+    """
+    client = await _get_client(working_dir)
+    return await client.show_entity(entity_id)
+
+
+async def beads_entity_update(
+    entity_id: Annotated[str, "Entity ID to update"],
+    name: Annotated[str | None, "New name (optional)"] = None,
+    summary: Annotated[str | None, "New summary (optional)"] = None,
+    metadata: Annotated[dict[str, Any] | None, "New metadata (optional)"] = None,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> Entity:
+    """Update an existing entity.
+    
+    Args:
+        entity_id: Entity ID to update
+        name: New name (optional)
+        summary: New summary (optional)
+        metadata: New metadata (optional)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        Entity: Updated entity
+    """
+    client = await _get_client(working_dir)
+    kwargs = {}
+    if name is not None:
+        kwargs['name'] = name
+    if summary is not None:
+        kwargs['summary'] = summary
+    if metadata is not None:
+        kwargs['metadata'] = metadata
+    return await client.update_entity(entity_id, **kwargs)
+
+
+async def beads_entity_delete(
+    entity_id: Annotated[str, "Entity ID to delete"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> dict[str, Any]:
+    """Delete an entity (cascade deletes relationships).
+    
+    Args:
+        entity_id: Entity ID to delete
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        dict: Deletion confirmation with deleted entity count
+    """
+    client = await _get_client(working_dir)
+    return await client.delete_entity(entity_id)
+
+
+async def beads_relationship_create(
+    source_entity_id: Annotated[str, "Source entity ID"],
+    relationship_type: Annotated[str, "Relationship type (e.g., 'leads', 'blocks', 'mentioned_in')"],
+    target_entity_id: Annotated[str, "Target entity ID"],
+    valid_from: Annotated[str | None, "Relationship start timestamp (ISO 8601, optional, defaults to now)"] = None,
+    valid_until: Annotated[str | None, "Relationship end timestamp (ISO 8601, optional, null = ongoing)"] = None,
+    confidence: Annotated[float | None, "Confidence score 0.0-1.0 (optional, defaults to 1.0)"] = None,
+    metadata: Annotated[dict[str, Any] | None, "Additional structured data (optional)"] = None,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> Relationship:
+    """Create a new relationship between two entities.
+    
+    Args:
+        source_entity_id: Source entity ID
+        relationship_type: Relationship type (e.g., "leads", "blocks", "mentioned_in")
+        target_entity_id: Target entity ID
+        valid_from: Relationship start timestamp (ISO 8601, optional, defaults to now)
+        valid_until: Relationship end timestamp (ISO 8601, optional, null = ongoing)
+        confidence: Confidence score 0.0-1.0 (optional, defaults to 1.0)
+        metadata: Additional structured data (optional)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        Relationship: Created relationship with ID
+    """
+    client = await _get_client(working_dir)
+    params = CreateRelationshipParams(
+        source_entity_id=source_entity_id,
+        relationship_type=relationship_type,
+        target_entity_id=target_entity_id,
+        valid_from=valid_from,
+        valid_until=valid_until,
+        confidence=confidence,
+        metadata=metadata
+    )
+    return await client.create_relationship(params)
+
+
+async def beads_relationship_list(
+    source_entity_id: Annotated[str | None, "Filter by source entity (optional)"] = None,
+    target_entity_id: Annotated[str | None, "Filter by target entity (optional)"] = None,
+    relationship_type: Annotated[str | None, "Filter by type (optional)"] = None,
+    min_confidence: Annotated[float | None, "Minimum confidence threshold (optional, 0.0-1.0)"] = None,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> list[Relationship]:
+    """List relationships with optional filtering.
+    
+    Args:
+        source_entity_id: Filter by source entity (optional)
+        target_entity_id: Filter by target entity (optional)
+        relationship_type: Filter by type (optional)
+        min_confidence: Minimum confidence threshold (optional, 0.0-1.0)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        List[Relationship]: Matching relationships
+    """
+    client = await _get_client(working_dir)
+    return await client.list_relationships(
+        source_id=source_entity_id,
+        target_id=target_entity_id,
+        relationship_type=relationship_type,
+        min_confidence=min_confidence
+    )
+
+
+async def beads_relationship_show(
+    relationship_id: Annotated[str, "Relationship ID"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> Relationship:
+    """Show detailed information about a relationship.
+    
+    Args:
+        relationship_id: Relationship ID
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        Relationship: Full relationship details
+    """
+    client = await _get_client(working_dir)
+    return await client.show_relationship(relationship_id)
+
+
+async def beads_relationship_update(
+    relationship_id: Annotated[str, "Relationship ID to update"],
+    valid_from: Annotated[str | None, "New start timestamp (ISO 8601, optional)"] = None,
+    valid_until: Annotated[str | None, "New end timestamp (ISO 8601, optional)"] = None,
+    confidence: Annotated[float | None, "New confidence score 0.0-1.0 (optional)"] = None,
+    metadata: Annotated[dict[str, Any] | None, "New metadata (optional)"] = None,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> Relationship:
+    """Update an existing relationship.
+    
+    Args:
+        relationship_id: Relationship ID to update
+        valid_from: New start timestamp (ISO 8601, optional)
+        valid_until: New end timestamp (ISO 8601, optional)
+        confidence: New confidence score 0.0-1.0 (optional)
+        metadata: New metadata (optional)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        Relationship: Updated relationship
+    """
+    client = await _get_client(working_dir)
+    kwargs = {}
+    if valid_from is not None:
+        kwargs['valid_from'] = valid_from
+    if valid_until is not None:
+        kwargs['valid_until'] = valid_until
+    if confidence is not None:
+        kwargs['confidence'] = confidence
+    if metadata is not None:
+        kwargs['metadata'] = metadata
+    return await client.update_relationship(relationship_id, **kwargs)
+
+
+async def beads_relationship_delete(
+    relationship_id: Annotated[str, "Relationship ID to delete"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> dict[str, Any]:
+    """Delete a relationship.
+    
+    Args:
+        relationship_id: Relationship ID to delete
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        dict: Deletion confirmation
+    """
+    client = await _get_client(working_dir)
+    return await client.delete_relationship(relationship_id)
+
+
+async def beads_episode_create(
+    source: Annotated[str, "Episode source (e.g., 'github', 'jira', 'manual', 'conversation')"],
+    file_path: Annotated[str, "Path to raw data file (text, JSON, etc.)"],
+    timestamp: Annotated[str | None, "Episode timestamp (ISO 8601, optional, defaults to now)"] = None,
+    entities_extracted: Annotated[list[str] | None, "Pre-linked entity IDs (optional)"] = None,
+    extract: Annotated[bool, "Auto-extract entities after creation (optional, default False)"] = False,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> Episode:
+    """Create a new episode (provenance record for entity extraction).
+    
+    Args:
+        source: Episode source (e.g., "github", "jira", "manual", "conversation")
+        file_path: Path to raw data file (text, JSON, etc.)
+        timestamp: Episode timestamp (ISO 8601, optional, defaults to now)
+        entities_extracted: Pre-linked entity IDs (optional)
+        extract: Auto-extract entities after creation (optional, default False)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        Episode: Created episode with ID
+    """
+    client = await _get_client(working_dir)
+    params = CreateEpisodeParams(
+        source=source,
+        file_path=file_path,
+        timestamp=timestamp,
+        entities_extracted=entities_extracted,
+        extract=extract
+    )
+    return await client.create_episode(params)
+
+
+async def beads_episode_list(
+    source: Annotated[str | None, "Filter by source (optional)"] = None,
+    limit: Annotated[int, "Maximum number of results (default 50)"] = 50,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> list[Episode]:
+    """List episodes with optional filtering.
+    
+    Args:
+        source: Filter by source (optional)
+        limit: Maximum number of results (default 50)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        List[Episode]: Matching episodes
+    """
+    client = await _get_client(working_dir)
+    return await client.list_episodes(source=source, limit=limit)
+
+
+async def beads_episode_show(
+    episode_id: Annotated[str, "Episode ID"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> Episode:
+    """Show detailed information about an episode.
+    
+    Args:
+        episode_id: Episode ID
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        Episode: Episode details (raw_data not included, only size)
+    """
+    client = await _get_client(working_dir)
+    return await client.show_episode(episode_id)
+
+
+async def beads_episode_extract(
+    episode_id: Annotated[str, "Episode ID to process"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> dict[str, Any]:
+    """Extract entities and relationships from an episode using LLM.
+    
+    Requires ANTHROPIC_API_KEY environment variable.
+    
+    Args:
+        episode_id: Episode ID to process
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        dict: Extraction results (entities_created, relationships_created)
+    """
+    client = await _get_client(working_dir)
+    return await client.extract_episode(episode_id)
+
+
+async def beads_ontology_register_entity_type(
+    name: Annotated[str, "Entity type name (e.g., 'meeting', 'document', 'person')"],
+    schema: Annotated[dict[str, Any], "JSON schema for entity metadata validation (Pydantic-like)"],
+    description: Annotated[str, "Human-readable description of the type"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> EntityType:
+    """Register a custom entity type with JSON schema validation.
+    
+    Args:
+        name: Entity type name (e.g., "meeting", "document", "person")
+        schema: JSON schema for entity metadata validation (Pydantic-like)
+        description: Human-readable description of the type
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        EntityType: Registered entity type
+    
+    Example:
+        schema = {
+            "properties": {
+                "attendees": {"type": "array", "items": {"type": "string"}},
+                "duration_minutes": {"type": "integer"}
+            },
+            "required": ["attendees"]
+        }
+        beads_ontology_register_entity_type("meeting", schema, "A scheduled meeting")
+    """
+    client = await _get_client(working_dir)
+    return await client.register_entity_type(name, schema, description)
+
+
+async def beads_ontology_register_relationship_type(
+    name: Annotated[str, "Relationship type name (e.g., 'mentioned_in', 'leads', 'blocks')"],
+    schema: Annotated[dict[str, Any], "JSON schema for relationship metadata validation"],
+    description: Annotated[str, "Human-readable description of the type"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> RelationshipType:
+    """Register a custom relationship type with JSON schema validation.
+    
+    Args:
+        name: Relationship type name (e.g., "mentioned_in", "leads", "blocks")
+        schema: JSON schema for relationship metadata validation
+        description: Human-readable description of the type
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        RelationshipType: Registered relationship type
+    
+    Example:
+        schema = {
+            "properties": {
+                "context": {"type": "string"},
+                "relevance_score": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+        }
+        beads_ontology_register_relationship_type("mentioned_in", schema, "Entity referenced in another")
+    """
+    client = await _get_client(working_dir)
+    return await client.register_relationship_type(name, schema, description)
+
+
+async def beads_ontology_list_entity_types(
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> list[EntityType]:
+    """List all registered entity types.
+    
+    Args:
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        List[EntityType]: All entity types
+    """
+    client = await _get_client(working_dir)
+    return await client.list_entity_types()
+
+
+async def beads_entity_search(
+    query: Annotated[str, "Natural language search query"],
+    entity_type: Annotated[str | None, "Filter by entity type (optional)"] = None,
+    top: Annotated[int, "Maximum number of results (default 10)"] = 10,
+    threshold: Annotated[float | None, "Similarity threshold 0.0-1.0 (optional)"] = None,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> list[Entity]:
+    """Search entities using natural language query (semantic search).
+    
+    Args:
+        query: Natural language search query
+        entity_type: Filter by entity type (optional)
+        top: Maximum number of results (default 10)
+        threshold: Similarity threshold 0.0-1.0 (optional)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        List[Entity]: Most relevant entities sorted by similarity
+    
+    Example:
+        beads_entity_search("Alice's role in auth service")
+    """
+    client = await _get_client(working_dir)
+    return await client.search_entities(query, entity_type=entity_type, limit=top, threshold=threshold)
+
+
+async def beads_entity_merge(
+    source_id: Annotated[str, "Source entity ID (will be soft-deleted)"],
+    target_id: Annotated[str, "Target entity ID (receives all relationships)"],
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> dict[str, Any]:
+    """Merge source entity into target entity (deduplication).
+    
+    Args:
+        source_id: Source entity ID (will be soft-deleted)
+        target_id: Target entity ID (receives all relationships)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        dict: Merge confirmation
+    """
+    client = await _get_client(working_dir)
+    return await client.merge_entities(source_id, target_id)
+
+
+async def beads_entity_find_duplicates(
+    entity_type: Annotated[str | None, "Filter by entity type (optional)"] = None,
+    threshold: Annotated[float, "Similarity threshold 0.0-1.0 (default 0.8)"] = 0.8,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> list[dict[str, Any]]:
+    """Find potential duplicate entities using similarity scoring.
+    
+    Args:
+        entity_type: Filter by entity type (optional)
+        threshold: Similarity threshold 0.0-1.0 (default 0.8)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        List[dict]: Duplicate pairs with similarity scores
+    """
+    client = await _get_client(working_dir)
+    return await client.find_duplicate_entities(entity_type, threshold)
+
+
+async def beads_memory_retrieve(
+    query: Annotated[str, "Natural language query"],
+    max_hops: Annotated[int, "Graph traversal depth (default 2)"] = 2,
+    top_k: Annotated[int, "Max initial entities from semantic search (default 5)"] = 5,
+    min_confidence: Annotated[float, "Minimum relationship confidence (default 0.5)"] = 0.5,
+    working_dir: Annotated[str | None, "beads workspace directory (optional)"] = None,
+) -> dict[str, Any]:
+    """Retrieve memory context from knowledge graph (semantic search + graph traversal).
+    
+    Args:
+        query: Natural language query
+        max_hops: Graph traversal depth (default 2)
+        top_k: Max initial entities from semantic search (default 5)
+        min_confidence: Minimum relationship confidence (default 0.5)
+        working_dir: beads workspace directory (optional)
+    
+    Returns:
+        dict: Memory context (entities, relationships, source_episodes, relevance_scores)
+    """
+    client = await _get_client(working_dir)
+    return await client.retrieve_memory(query, max_hops, top_k, min_confidence)
