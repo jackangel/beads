@@ -36,6 +36,11 @@ Examples:
 		// Block writes in readonly mode
 		CheckReadonly("migrate rollback")
 
+		// Initialize store
+		if err := ensureStoreActive(); err != nil {
+			FatalError("%v", err)
+		}
+
 		ctx := rootCtx
 		store := getStore()
 

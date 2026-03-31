@@ -13,7 +13,28 @@ import (
 //
 // All changes are additive (no breaking changes to existing queries).
 // Idempotent: checks for existence before adding columns/tables.
+// Skips gracefully if v8 tables don't exist yet (user hasn't run `bd v8 migrate`).
 func MigrateV81Extensions(db *sql.DB) error {
+	// Check if v8 tables exist - if not, skip this migration gracefully
+	// (v8 tables are created by manual migration, not automatic init)
+	v8TablesExist := true
+	for _, table := range []string{"entities", "relationships", "episodes"} {
+		exists, err := tableExists(db, table)
+		if err != nil {
+			return fmt.Errorf("failed to check if table %s exists: %w", table, err)
+		}
+		if !exists {
+			v8TablesExist = false
+			break
+		}
+	}
+	
+	if !v8TablesExist {
+		// v8 tables don't exist yet - skip this migration
+		// It will run automatically after `bd v8 migrate` creates the tables
+		return nil
+	}
+
 	// 1. Add confidence column to relationships table
 	exists, err := columnExists(db, "relationships", "confidence")
 	if err != nil {

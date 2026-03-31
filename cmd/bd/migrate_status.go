@@ -30,6 +30,11 @@ Examples:
   bd migrate status              # Human-readable output
   bd migrate status --json       # JSON output for automation`,
 	Run: func(cmd *cobra.Command, _ []string) {
+		// Initialize store
+		if err := ensureStoreActive(); err != nil {
+			FatalError("%v", err)
+		}
+
 		ctx := rootCtx
 		store := getStore()
 

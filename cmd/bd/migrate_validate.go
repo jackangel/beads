@@ -34,6 +34,11 @@ Examples:
 	Run: func(cmd *cobra.Command, _ []string) {
 		full, _ := cmd.Flags().GetBool("full")
 
+		// Initialize store
+		if err := ensureStoreActive(); err != nil {
+			FatalError("%v", err)
+		}
+
 		ctx := rootCtx
 		store := getStore()
 

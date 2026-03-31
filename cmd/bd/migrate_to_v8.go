@@ -43,6 +43,11 @@ Examples:
 			CheckReadonly("migrate to-v8")
 		}
 
+		// Initialize store
+		if err := ensureStoreActive(); err != nil {
+			FatalError("%v", err)
+		}
+
 		ctx := rootCtx
 		store := getStore()
 

@@ -1062,3 +1062,255 @@ This is a **major architectural transformation** that fundamentally changes how 
 - Compaction system needs entity-aware summarization
 - Query engine needs optimization for temporal filtering at scale
 - UI enhancements for graph visualization
+
+---
+
+## CRITICAL: User Experience Gap (Discovered During Implementation)
+
+### Issue
+All new v8 commands (`bd entity create`, `bd episode create`, `bd relationship create`, etc.) fail with cryptic error messages when v8 migration hasn't been run:
+
+```
+Error: failed to create episode: failed to insert episode: Error 1146 (HY000): table not found: episodes
+```
+
+**Root Cause:**
+- Database is still on schema v7 (old issue-based schema)
+- New commands try to use v8 tables (`entities`, `relationships`, `episodes`)
+- Migration hasn't been run to create these tables
+- Error message doesn't tell users HOW to fix it
+
+### Impact
+**All new v8 features are unusable** until user discovers they need to run `bd migrate to-v8` first. This creates a poor first-time user experience.
+
+### Recommended Fixes
+
+#### Fix 1: Improved Error Messages (HIGH PRIORITY)
+When any v8 command detects missing tables, show helpful error:
+
+```
+Error: v8 knowledge graph tables not found
+
+The 'bd episode' command requires schema version 8 tables.
+Your database is currently on schema version 7.
+
+To migrate to v8 and enable knowledge graph features:
+  bd migrate to-v8
+
+To preview the migration without applying changes:
+  bd migrate to-v8 --dry-run
+
+For more information: docs/MIGRATION_V8.md
+```
+
+**Implementation:**
+- Add `CheckV8TablesExist()` helper in `internal/storage/dolt/migration_v8.go`
+- Call from all v8 commands before attempting operations
+- Return structured error with migration instructions
+
+#### Fix 2: Auto-Detection in Command Help (MEDIUM PRIORITY)
+When user runs `bd entity --help`, show schema version status:
+
+```
+Usage: bd entity [command]
+
+Available Commands:
+  create      Create a new entity
+  list        List entities
+  show        Show entity details
+
+Note: This command requires schema v8. Your database is on v7.
+      Run 'bd migrate to-v8' to enable knowledge graph features.
+```
+
+**Implementation:**
+- Add schema version check in `init()` for v8 command groups
+- Show banner/warning if v7 detected
+
+#### Fix 3: Migration Status in bd status (LOW PRIORITY)
+Show schema version in `bd status` output:
+
+```
+Repository: steveyegge/beads
+Database: .beads/dolt
+Schema Version: v7 (v8 available - run 'bd migrate to-v8')
+Issues: 42 open, 12 closed
+```
+
+**Implementation:**
+- Extend `bd status` to show schema version
+- Detect if v8 migration is available but not run
+
+#### Fix 4: Documentation Updates (HIGH PRIORITY)
+Update docs to mention migration requirement:
+
+**QUICKSTART.md:**
+```markdown
+## Enable Knowledge Graph Features (Optional)
+
+Beads v0.8+ includes a knowledge graph system for tracking entities
+and relationships beyond traditional issues.
+
+To enable these features:
+```bash
+bd migrate to-v8
+```
+
+This creates new tables: entities, relationships, episodes, entity_types, relationship_types.
+
+The v7 issue system continues to work alongside v8 tables.
+```
+
+**CLI_REFERENCE.md:**
+- Add "Requires v8" badge to all entity/relationship/episode/graph commands
+- Link to migration guide
+
+**MIGRATION_V8.md:**
+- Add "Common Errors" section with "table not found" troubleshooting
+
+### Priority Implementation Order
+1. **Fix 1** - Improved error messages (blocks all v8 usage) — **PARTIALLY IMPLEMENTED**
+2. **Fix 4** - Documentation (helps users discover migration)
+3. **Fix 2** - Auto-detection in help (improves discoverability)
+4. **Fix 3** - Status command (nice-to-have)
+
+### Implementation Status
+
+#### Fix 1: Improved Error Messages — PARTIALLY IMPLEMENTED
+
+**Completed:**
+- ✅ Created `CheckV8TablesExist()` helper in `internal/storage/dolt/migration_v8.go`
+- ✅ Added improved error message with migration instructions
+- ✅ Implemented in `cmd/bd/episode_create.go` as reference implementation
+
+**Remaining Work:**
+Apply the same pattern to all other v8 commands. The pattern is:
+
+```go
+// At the top of the file, add import if not present:
+import (
+	"github.com/steveyegge/beads/internal/storage/dolt"
+)
+
+// In the Run function, after CheckReadonly() and ensureDirectMode():
+Run: func(cmd *cobra.Command, args []string) {
+	CheckReadonly("command name")
+	ctx := rootCtx
+	
+	// Check if v8 tables exist
+	if err := ensureDirectMode("command requires direct database access"); err != nil {
+		FatalError("%v", err)
+	}
+	store := getStore()
+	if err := dolt.CheckV8TablesExist(ctx, store.DB()); err != nil {
+		FatalError("%v", err)
+	}
+	
+	// ... rest of command logic
+}
+```
+
+**Files that need this check (29 total):**
+- `cmd/bd/entity_create.go`
+- `cmd/bd/entity_list.go`
+- `cmd/bd/entity_show.go`
+- `cmd/bd/entity_update.go`
+- `cmd/bd/entity_delete.go`
+- `cmd/bd/entity_search.go`
+- `cmd/bd/entity_merge.go`
+- `cmd/bd/entity_find_duplicates.go`
+- `cmd/bd/relationship_create.go`
+- `cmd/bd/relationship_list.go`
+- `cmd/bd/relationship_show.go`
+- `cmd/bd/relationship_update.go`
+- `cmd/bd/relationship_delete.go`
+- `cmd/bd/episode_list.go`
+- `cmd/bd/episode_show.go`
+- `cmd/bd/episode_extract.go`
+- `cmd/bd/episode_extract_all.go`
+- `cmd/bd/ontology_register_entity_type.go`
+- `cmd/bd/ontology_register_relationship_type.go`
+- `cmd/bd/ontology_list.go`
+- `cmd/bd/graph_explore.go`
+- `cmd/bd/graph_traverse.go`
+- `cmd/bd/graph_visualize.go`
+- `cmd/bd/graph_export.go`
+- `cmd/bd/graph_visual.go`
+
+**Estimated time to complete:** 1-2 hours (apply pattern to all 24 remaining files)
+
+### Estimated Effort
+- Fix 1: 1-2 hours (single helper function + error handling in ~8 commands) — **1 hour completed, 1 hour remaining**
+- Fix 2: 30 minutes (banner in command group init)
+- Fix 3: 30 minutes (extend existing status command)
+- Fix 4: 1 hour (doc updates)
+
+**Total: ~3-4 hours to fix critical UX gap** (1 hour completed, 2-3 hours remaining)
+
+---
+
+## CRITICAL: Discovered Bugs (Fixed During Implementation)
+
+### Bug 1: Nil Pointer Dereference in Migrate Commands ✅ FIXED
+
+**Issue:**
+All migrate commands (`migrate to-v8`, `migrate status`, `migrate rollback`, `migrate validate`) crashed with nil pointer dereference:
+
+```
+panic: runtime error: invalid memory address or nil pointer dereference
+github.com/steveyegge/beads/internal/storage/dolt.(*DoltStore).DB(...)
+```
+
+**Root Cause:**
+Commands called `getStore()` without first calling `ensureStoreActive()` to initialize the database connection. The store was nil.
+
+**Fix Applied:**
+Added `ensureStoreActive()` call at the beginning of all migrate commands before accessing the store:
+
+```go
+// Initialize store
+if err := ensureStoreActive(); err != nil {
+	FatalError("%v", err)
+}
+```
+
+**Files Fixed:**
+- ✅ `cmd/bd/migrate_to_v8.go`
+- ✅ `cmd/bd/migrate_status.go`
+- ✅ `cmd/bd/migrate_rollback.go`
+- ✅ `cmd/bd/migrate_validate.go`
+
+### Bug 2: SQL Parameter Binding in ValidateV8Schema ✅ FIXED
+
+**Issue:**
+Migration validation failed with SQL syntax error:
+
+```
+Error: migration validation failed: syntax error at position 19 near ':v1'
+```
+
+**Root Cause:**
+Used `SHOW TABLES LIKE ?` and `SHOW INDEX FROM table WHERE Key_name = ?` which don't support parameter binding in Dolt/MySQL. The `?` placeholder was interpreted as a named parameter `:v1`.
+
+**Fix Applied:**
+Replaced `SHOW` commands with `information_schema` queries that support proper parameter binding:
+
+```go
+// Before (broken):
+err := db.QueryRowContext(ctx, "SHOW TABLES LIKE ?", table).Scan(&count)
+
+// After (fixed):
+err := db.QueryRowContext(ctx,
+	"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+	table).Scan(&count)
+```
+
+**Files Fixed:**
+- ✅ `internal/storage/dolt/migration_v8.go` (2 locations: table check + index check)
+
+### Verification Status
+
+✅ `bd migrate status` - Works correctly
+✅ `bd migrate to-v8` - Migration completes successfully
+✅ `bd migrate validate` - Validation passes
+✅ `bd episode create` - v8 commands work after migration

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/beads/internal/extraction"
 	"github.com/steveyegge/beads/internal/idgen"
+	"github.com/steveyegge/beads/internal/storage/dolt"
 	"github.com/steveyegge/beads/internal/types"
 )
 
@@ -37,6 +38,16 @@ Examples:
 	Run: func(cmd *cobra.Command, args []string) {
 		CheckReadonly("episode create")
 		ctx := rootCtx
+
+		// Check if v8 tables exist (episode command requires v8)
+		if err := ensureDirectMode("episode create requires direct database access"); err != nil {
+			FatalError("%v", err)
+		}
+		// Verify v8 schema is available before attempting operations
+		store := getStore()
+		if err := dolt.CheckV8TablesExist(ctx, store.DB()); err != nil {
+			FatalError("%v", err)
+		}
 
 		// Get required flags
 		source, _ := cmd.Flags().GetString("source")

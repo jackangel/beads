@@ -466,12 +466,14 @@ func ValidateV8Schema(ctx context.Context, db *sql.DB) error {
 
 	for _, table := range requiredTables {
 		var count int
-		err := db.QueryRowContext(ctx, "SHOW TABLES LIKE ?", table).Scan(&count)
+		err := db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+			table).Scan(&count)
 		if err != nil {
-			if err == sql.ErrNoRows {
-				return fmt.Errorf("table %s does not exist", table)
-			}
 			return fmt.Errorf("failed to check table %s: %w", table, err)
+		}
+		if count == 0 {
+			return fmt.Errorf("table %s does not exist", table)
 		}
 	}
 
@@ -495,15 +497,15 @@ func ValidateV8Schema(ctx context.Context, db *sql.DB) error {
 	}
 
 	for _, check := range requiredIndexes {
-		rows, err := db.QueryContext(ctx,
-			"SHOW INDEX FROM "+check.table+" WHERE Key_name = ?", check.index)
+		var count int
+		err := db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
+			check.table, check.index).Scan(&count)
 		if err != nil {
 			return fmt.Errorf("failed to check index %s on table %s: %w",
 				check.index, check.table, err)
 		}
-		hasRows := rows.Next()
-		rows.Close()
-		if !hasRows {
+		if count == 0 {
 			return fmt.Errorf("index %s does not exist on table %s",
 				check.index, check.table)
 		}
@@ -558,3 +560,41 @@ func GetSchemaVersion(ctx context.Context, db *sql.DB) (string, error) {
 
 	return version, nil
 }
+
+// CheckV8TablesExist checks if v8 knowledge graph tables exist in the database.
+// Returns a user-friendly error if tables are missing, instructing the user
+// to run 'bd migrate to-v8'.
+//
+// This should be called at the beginning of any command that requires v8 tables.
+func CheckV8TablesExist(ctx context.Context, db *sql.DB) error {
+	// Check if v8 core tables exist
+	v8Tables := []string{"entities", "relationships", "episodes"}
+	
+	for _, table := range v8Tables {
+		var exists bool
+		query := fmt.Sprintf("SELECT COUNT(*) > 0 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '%s'", table)
+		err := db.QueryRowContext(ctx, query).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to check if table %s exists: %w", table, err)
+		}
+		
+		if !exists {
+			// Return helpful error message
+			return fmt.Errorf(`v8 knowledge graph tables not found
+
+The command you're trying to run requires schema version 8 tables.
+Your database is currently on an older schema version.
+
+To migrate to v8 and enable knowledge graph features:
+  bd migrate to-v8
+
+To preview the migration without applying changes:
+  bd migrate to-v8 --dry-run
+
+For more information, see docs/MIGRATION_V8.md`)
+		}
+	}
+	
+	return nil
+}
+
